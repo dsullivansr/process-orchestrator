@@ -31,13 +31,10 @@ class ResourceMonitor:
         Returns:
             Dictionary of system metrics
         """
-        # Get disk usage for the device containing the output directory
-        disk_usage = psutil.disk_usage(self.output_dir)
-
         return {
             'cpu_percent': psutil.cpu_percent(),
             'memory_percent': psutil.virtual_memory().percent,
-            'disk_percent': disk_usage.percent
+            'disk_percent': psutil.disk_usage(self.output_dir).percent
         }
 
     def can_start_new_process(self) -> bool:
