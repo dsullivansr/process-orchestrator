@@ -13,6 +13,8 @@ from orchestrator.process_manager import ProcessManager
 class TestJobConfig(unittest.TestCase):
     """Test job configuration functionality."""
 
+    # pylint: disable=duplicate-code
+
     def setUp(self):
         """Set up test fixtures."""
         self.test_dir = tempfile.mkdtemp()
@@ -61,16 +63,16 @@ class TestJobConfig(unittest.TestCase):
 
         # Process each test file
         for test_file in self.input_files:
-            process_info = manager.start_process(test_file)
-            self.assertIsNotNone(process_info)
+            process = manager.start_process(test_file)
+            self.assertIsNotNone(process)
 
             # Wait for process to complete
             output_file = os.path.join(self.output_dir,
                                        os.path.basename(test_file))
-            timeout = 5
+            timeout = 10
             start_time = time.time()
             while time.time() - start_time < timeout:
-                if os.path.exists(output_file):
+                if process.poll() is not None and os.path.exists(output_file):
                     break
                 time.sleep(0.1)
             else:
@@ -94,16 +96,16 @@ class TestJobConfig(unittest.TestCase):
 
         # Process a test file
         test_file = self.input_files[0]
-        process_info = manager.start_process(test_file)
-        self.assertIsNotNone(process_info)
+        process = manager.start_process(test_file)
+        self.assertIsNotNone(process)
 
         # Wait for process to complete
         output_file = os.path.join(self.output_dir,
                                    os.path.basename(test_file) + "_processed")
-        timeout = 5
+        timeout = 10
         start_time = time.time()
         while time.time() - start_time < timeout:
-            if os.path.exists(output_file):
+            if process.poll() is not None and os.path.exists(output_file):
                 break
             time.sleep(0.1)
         else:
@@ -156,7 +158,7 @@ class TestJobConfig(unittest.TestCase):
             job_config = {
                 'binary': {
                     'path': '/bin/cp',
-                    'flags': ['{input_file}', '{output_file}']
+                    'flags': ["{input_file}", "{output_file}"]
                 },
                 'directories': {
                     'input_file_list': self.input_list_file,
@@ -170,16 +172,16 @@ class TestJobConfig(unittest.TestCase):
 
             # Process a test file
             test_file = self.input_files[0]
-            process_info = manager.start_process(test_file)
-            self.assertIsNotNone(process_info)
+            process = manager.start_process(test_file)
+            self.assertIsNotNone(process)
 
             # Verify output file exists in correct directory
             output_file = os.path.join(output_dir,
                                        os.path.basename(test_file) + f'_bak{i}')
-            timeout = 5
+            timeout = 10
             start_time = time.time()
             while time.time() - start_time < timeout:
-                if os.path.exists(output_file):
+                if process.poll() is not None and os.path.exists(output_file):
                     break
                 time.sleep(0.1)
             else:

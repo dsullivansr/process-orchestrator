@@ -1,4 +1,4 @@
-"""Tests for resource monitoring functionality."""
+"""Unit tests for resource monitor module."""
 
 import unittest
 from unittest.mock import patch
@@ -7,16 +7,16 @@ from orchestrator.resource_monitor import ResourceMonitor
 
 
 class TestResourceMonitor(unittest.TestCase):
-    """Test cases for the ResourceMonitor class."""
+    """Test cases for ResourceMonitor class."""
 
     def setUp(self):
         """Set up test fixtures."""
-        self.monitor = ResourceMonitor()
         self.thresholds = {
             'cpu_percent': 80.0,
             'memory_percent': 80.0,
             'disk_percent': 90.0
         }
+        self.monitor = ResourceMonitor(self.thresholds)
 
     @patch('psutil.cpu_percent')
     @patch('psutil.virtual_memory')
@@ -43,7 +43,7 @@ class TestResourceMonitor(unittest.TestCase):
             'disk_percent': 50.0
         }
 
-        self.assertTrue(self.monitor.can_start_new_process(self.thresholds))
+        self.assertTrue(self.monitor.can_start_new_process())
 
     @patch('orchestrator.resource_monitor.ResourceMonitor.get_system_metrics')
     def test_can_start_new_process_over_threshold(self, mock_metrics):
@@ -54,4 +54,4 @@ class TestResourceMonitor(unittest.TestCase):
             'disk_percent': 50.0
         }
 
-        self.assertFalse(self.monitor.can_start_new_process(self.thresholds))
+        self.assertFalse(self.monitor.can_start_new_process())

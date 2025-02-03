@@ -1,164 +1,182 @@
 """Process management functionality."""
 
+import logging
 import os
 import subprocess
-import sys
-from typing import Dict, List, Optional, Tuple
-
-import psutil
+import time
+from typing import Dict, List, Optional
 
 from orchestrator.config import Config
+from orchestrator.resource_monitor import ResourceMonitor
+
+logger = logging.getLogger(__name__)
 
 
 class ProcessManager:
-    """Process manager for handling file processing jobs."""
+    """Process manager for orchestrating file processing."""
 
-    def __init__(self, job_config: Config):
+    def __init__(self,
+                 config: Config,
+                 thresholds: Optional[Dict[str, float]] = None) -> None:
         """Initialize process manager.
 
         Args:
-            job_config: Configuration for process management
+            config: Configuration object
+            thresholds: Optional resource thresholds
         """
-        self.config = job_config
-        self.processes: Dict[str, psutil.Process] = {}
+        self.config = config
+        self.resource_monitor = ResourceMonitor(thresholds)
+        self.processes: Dict[str, subprocess.Popen] = {}
+        self.completed_files: List[str] = []
+        self.failed_files: List[str] = []
 
     def build_command(self, input_file: str) -> List[str]:
         """Build command for processing a file.
 
         Args:
-            input_file: Path to input file
+            input_file: Input file path
 
         Returns:
-            List of command parts
+            Command list
         """
-        output_file = self._get_output_path(input_file)
-        command = [self.config.binary.path]
+        # Get output path with suffix
+        output_file = os.path.join(
+            self.config.directories.output_dir,
+            os.path.basename(input_file) +
+            self.config.directories.output_suffix)
 
-        # Add flags with templated values
+        # Build command with direct string substitution
+        cmd = [self.config.binary.path]
         for flag in self.config.binary.flags:
-            if '{input_file}' in flag:
-                command.append(flag.replace('{input_file}', input_file))
-            elif '{output_file}' in flag:
-                command.append(flag.replace('{output_file}', output_file))
-            else:
-                command.append(flag)
+            cmd.append(
+                flag.format(input_file=input_file, output_file=output_file))
 
-        return command
+        return cmd
 
-    def _get_output_path(self, input_file: str) -> str:
-        """Get output path for input file.
-
-        Args:
-            input_file: Path to input file
+    def _get_input_files(self) -> List[str]:
+        """Get list of input files.
 
         Returns:
-            Path to output file
+            List of input file paths
         """
-        basename = os.path.basename(input_file)
-        if self.config.directories.output_suffix:
-            basename = f"{basename}{self.config.directories.output_suffix}"
-        return os.path.join(self.config.directories.output_dir, basename)
+        with open(self.config.directories.input_file_list,
+                  'r',
+                  encoding='utf-8') as f:
+            return [line.strip() for line in f if line.strip()]
 
-    def start_process(self, input_file: str) -> Optional[psutil.Process]:
-        """Start a new process for file processing.
+    def start_process(self, input_file: str) -> Optional[subprocess.Popen]:
+        """Start a new process.
 
         Args:
-            input_file: Path to input file
+            input_file: Input file path
 
         Returns:
-            Process info if started successfully, None otherwise
+            Process object if started successfully, None otherwise
 
         Raises:
             FileNotFoundError: If input file does not exist
-            ValueError: If process is already running for input file
-            subprocess.SubprocessError: If process fails to start
         """
-        if not os.path.exists(input_file):
+        if not os.path.isfile(input_file):
             raise FileNotFoundError(f"Input file not found: {input_file}")
 
-        if input_file in self.processes:
-            raise ValueError(f"Process already running for {input_file}")
+        # Build command
+        cmd = self.build_command(input_file)
 
-        command = self.build_command(input_file)
+        # Create output directory if it doesn't exist
+        output_dir = os.path.dirname(cmd[-1].split('=')[-1])
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Start process
+        logger.info("Starting process for file: %s", input_file)
+        logger.debug("Command: %s", ' '.join(cmd))
+
         try:
-            with subprocess.Popen(command,
+            with subprocess.Popen(cmd,
                                   stdout=subprocess.PIPE,
                                   stderr=subprocess.PIPE,
+                                  text=True,
+                                  bufsize=1,
                                   universal_newlines=True) as process:
-                self.processes[input_file] = psutil.Process(process.pid)
-                return self.processes[input_file]
-        except subprocess.SubprocessError as e:
-            raise subprocess.SubprocessError(
-                f"Failed to start process: {str(e)}") from e
-
-    def get_process_info(self, input_file: str) -> Optional[Tuple[str, float]]:
-        """Get process information.
-
-        Args:
-            input_file: Path to input file
-
-        Returns:
-            Tuple of (status, cpu_percent) if process exists, None otherwise
-        """
-        if input_file not in self.processes:
+                self.processes[input_file] = process
+                return process
+        except Exception as e:
+            logger.error("Failed to start process for file %s: %s", input_file,
+                         e)
+            self.failed_files.append(input_file)
             return None
 
-        try:
-            process = self.processes[input_file]
-            status = process.status()
-            cpu_percent = process.cpu_percent()
-            return status, cpu_percent
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            del self.processes[input_file]
-            return None
-
-    def get_active_processes(self) -> List[psutil.Process]:
-        """Get list of active processes.
-
-        Returns:
-            List of active process objects
-        """
-        active_processes = []
-        for input_file, process in list(self.processes.items()):
-            try:
-                if process.is_running():
-                    active_processes.append(process)
-                else:
-                    del self.processes[input_file]
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                del self.processes[input_file]
-        return active_processes
-
-    def stop_process(self, input_file: str) -> bool:
-        """Stop a running process.
+    def _check_process(self, input_file: str,
+                       process: subprocess.Popen) -> Optional[bool]:
+        """Check process status.
 
         Args:
-            input_file: Path to input file
+            input_file: Input file path
+            process: Process object
 
         Returns:
-            True if process was stopped, False otherwise
+            True if process completed successfully, False if failed,
+            None if still running
         """
-        if input_file not in self.processes:
-            return False
+        return_code = process.poll()
 
-        try:
-            process = self.processes[input_file]
-            process.terminate()
-            process.wait(timeout=5)
+        if return_code is None:
+            return None
+
+        # Process finished
+        stdout, stderr = process.communicate()
+
+        if return_code == 0:
+            logger.info("Process completed successfully for file: %s",
+                        input_file)
+            self.completed_files.append(input_file)
             return True
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            return False
-        finally:
+
+        logger.error(
+            "Process failed for file %s with return code %d\nStdout: %s\nStderr: %s",
+            input_file, return_code, stdout, stderr)
+        self.failed_files.append(input_file)
+        return False
+
+    def _check_processes(self) -> None:
+        """Check status of all running processes."""
+        completed = []
+        for input_file, process in self.processes.items():
+            if self._check_process(input_file, process):
+                completed.append(input_file)
+
+        # Remove completed processes
+        for input_file in completed:
             del self.processes[input_file]
 
-    def run(self):
-        if len(sys.argv) != 2:
-            print("Usage: python orchestrator.py <path_to_input_file>")
-            sys.exit(1)
+    def run(self) -> int:
+        """Run process manager.
 
-        input_file = sys.argv[1]
-        self.start_process(input_file)
+        Returns:
+            Exit code (0 for success, non-zero for failure)
+        """
+        input_files = self._get_input_files()
+        total_files = len(input_files)
+        current_index = 0
 
+        logger.info("Starting process manager with %d files", total_files)
 
-if __name__ == "__main__":
-    ProcessManager(Config()).run()
+        while (current_index < total_files or self.processes):
+            # Check running processes
+            self._check_processes()
+
+            # Start new processes if resources available
+            while (current_index < total_files and
+                   self.resource_monitor.can_start_new_process()):
+                self.start_process(input_files[current_index])
+                current_index += 1
+
+            # Sleep briefly to avoid busy waiting
+            if self.processes:
+                time.sleep(0.1)
+
+        # Log final status
+        logger.info("Process manager finished")
+        logger.info("Completed files: %d", len(self.completed_files))
+        logger.info("Failed files: %d", len(self.failed_files))
+
+        return len(self.failed_files)

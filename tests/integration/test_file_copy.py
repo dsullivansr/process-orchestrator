@@ -1,4 +1,5 @@
 """Integration tests for file copy functionality."""
+# pylint: disable=duplicate-code
 
 import os
 import tempfile
@@ -65,10 +66,10 @@ class TestFileCopy(unittest.TestCase):
         # Wait for process to complete
         output_file = os.path.join(self.output_dir,
                                    os.path.basename(self.large_file) + '.bak')
-        timeout = 5
+        timeout = 10
         start_time = time.time()
         while time.time() - start_time < timeout:
-            if os.path.exists(output_file):
+            if process.poll() is not None and os.path.exists(output_file):
                 break
             time.sleep(0.1)
         else:
@@ -93,14 +94,15 @@ class TestFileCopy(unittest.TestCase):
             processes.append(process)
 
         # Wait for all processes to complete
-        timeout = 5
+        timeout = 10
         start_time = time.time()
         while time.time() - start_time < timeout:
             all_done = True
-            for test_file in self.test_files:
+            for i, test_file in enumerate(self.test_files):
                 output_file = os.path.join(self.output_dir,
                                            os.path.basename(test_file) + '.bak')
-                if not os.path.exists(output_file):
+                if processes[i].poll(
+                ) is None or not os.path.exists(output_file):
                     all_done = False
                     break
             if all_done:
