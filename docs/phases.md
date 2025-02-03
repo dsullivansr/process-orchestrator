@@ -15,11 +15,11 @@ Focus: Basic process management with resource awareness
      flags:
        - "--input={input_file}"
        - "--output={output_file}"
-   
+
    directories:
      input: "/path/to/input"
      output: "/path/to/output"
-   
+
    resources:
      max_processes: 3  # Simple fixed limit to start
      memory_threshold_percent: 80

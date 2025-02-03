@@ -1,54 +1,169 @@
 # Process Orchestrator
 
-A Python-based process orchestrator that manages and monitors a binary process, collecting metrics for CPU, memory, and disk usage.
+A flexible process orchestration system that manages and monitors the execution of file processing jobs.
 
 ## Features
 
-- Process management with automatic restart on failure
-- Real-time monitoring of:
-  - CPU usage
-  - Memory usage
-  - Disk I/O
-- Prometheus metrics endpoint for monitoring integration
-- Logging system for process events
+- YAML-based job configuration
+- Parallel process execution
+- Process monitoring and management
+- Configurable input/output handling
+- Safety checks to prevent accidental file overwrites
 
-## Requirements
+## Job Configuration
 
-- Python 3.7+
-- Dependencies listed in requirements.txt
+Jobs are defined using YAML configuration files. Each job configuration specifies:
 
-## Installation
+1. The binary (executable) to run
+2. Command-line flags and arguments
+3. Input and output directory settings
 
-1. Clone the repository
-2. Create and activate a virtual environment:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Unix/macOS
-   # or
-   .\venv\Scripts\activate  # On Windows
+### Basic Configuration Structure
+
+```yaml
+job_name:
+  binary:
+    path: /path/to/binary
+    flags:
+      - "-flag1"
+      - "{input_file}"  # Will be replaced with actual input file
+      - "{output_file}" # Will be replaced with actual output file
+  directories:
+    input_dir: /path/to/input
+    output_dir: /path/to/output
+    output_suffix: .processed  # Optional suffix for output files
+```
+
+### Output File Handling
+
+The system provides flexible output file naming through the optional `output_suffix` configuration:
+
+1. **With Suffix**: If `output_suffix` is specified, it will be appended to each output filename
+   ```yaml
+   directories:
+     input_dir: /data/input
+     output_dir: /data/output
+     output_suffix: .processed
    ```
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
+   Example: `input.txt` → `input.txt.processed`
+
+2. **Without Suffix**: If `output_suffix` is omitted, output files keep their original names
+   ```yaml
+   directories:
+     input_dir: /data/input
+     output_dir: /data/output
    ```
+   Example: `input.txt` → `input.txt`
+
+### Safety Features
+
+1. **Same Directory Protection**: When input and output directories are the same, an output suffix is required to prevent file overwrites
+   ```yaml
+   # This is valid - files will be suffixed
+   directories:
+     input_dir: /data/workspace
+     output_dir: /data/workspace
+     output_suffix: .new
+
+   # This will raise an error - no suffix to prevent overwrites
+   directories:
+     input_dir: /data/workspace
+     output_dir: /data/workspace
+   ```
+
+2. **Path Normalization**: The system normalizes paths to handle different path formats and prevent confusion
+   ```yaml
+   # These are treated as the same directory
+   input_dir: /data/workspace
+   output_dir: /data/workspace/../workspace
+   ```
+
+## Example Configurations
+
+### 1. File Copy Job
+```yaml
+file_copy_job:
+  binary:
+    path: /bin/cp
+    flags:
+      - "-v"
+      - "{input_file}"
+      - "{output_file}"
+  directories:
+    input_dir: /data/input
+    output_dir: /data/output
+    output_suffix: .copy
+```
+
+### 2. Compression Job
+```yaml
+compression_job:
+  binary:
+    path: /bin/gzip
+    flags:
+      - "-c"
+      - "{input_file}"
+      - ">"
+      - "{output_file}"
+  directories:
+    input_dir: /data/input
+    output_dir: /data/compressed
+    output_suffix: .gz
+```
+
+### 3. In-Place Processing
+```yaml
+inplace_job:
+  binary:
+    path: /bin/sed
+    flags:
+      - "-i"
+      - "s/old/new/g"
+      - "{input_file}"
+      - ">"
+      - "{output_file}"
+  directories:
+    input_dir: /data/workspace
+    output_dir: /data/workspace  # Same as input
+    output_suffix: .processed    # Required for in-place processing
+```
 
 ## Usage
 
-Run the orchestrator with your binary:
+1. Create a job configuration file:
+   ```yaml
+   my_job:
+     binary:
+       path: /bin/process
+       flags: [...]
+     directories:
+       input_dir: /path/to/input
+       output_dir: /path/to/output
+       output_suffix: .processed
+   ```
+
+2. Load and use the configuration in your code:
+   ```python
+   from orchestrator.config import Config
+   from orchestrator.process_manager import ProcessManager
+
+   # Load configuration
+   config = Config(config_path='job_config.yaml')
+
+   # Create process manager
+   manager = ProcessManager(config)
+
+   # Process a file
+   process_info = manager.start_process('input_file.txt')
+   ```
+
+## Installation
+
 ```bash
-python orchestrator.py /path/to/your/binary
+pip install -r requirements.txt
 ```
 
-The orchestrator will:
-1. Start your binary process
-2. Monitor its resource usage
-3. Automatically restart it if it crashes
-4. Expose metrics on http://localhost:8000 for Prometheus scraping
+## Testing
 
-## Metrics
-
-Access metrics at http://localhost:8000. Available metrics:
-- process_cpu_percent
-- process_memory_bytes
-- process_disk_read_bytes
-- process_disk_write_bytes
+```bash
+python -m pytest tests/

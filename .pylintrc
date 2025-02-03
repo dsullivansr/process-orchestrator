@@ -1,66 +1,42 @@
 [MASTER]
-ignore=CVS
-persistent=yes
+recursive=yes
+ignore=CVS,.git,__pycache__
 load-plugins=
 
 [MESSAGES CONTROL]
-disable=C0111,R0903,C0103,R0201,W0511,R0902,R0913,R0904,C0302,R0914,R0912,R0915,R0911,R0801,W0621,W0108,C0325,C0330,C0326,C0301
+disable=C0111,C0103,C0301,W0511,W0603,W0703,W1203,R0903,R0913,R0914
 
 [REPORTS]
 output-format=text
 reports=no
-evaluation=10.0 - ((float(5 * error + warning + refactor + convention) / statement) * 10)
 
 [FORMAT]
-max-line-length=80
-ignore-long-lines=^\s*(# )?<?https?://\S+>?$
+max-line-length=100
+indent-string='    '
 
 [BASIC]
-good-names=i,j,k,ex,Run,_
-bad-names=foo,bar,baz,toto,tutu,tata
-name-group=
-include-naming-hint=no
-function-rgx=[a-z_][a-z0-9_]{2,30}$
+function-rgx=[a-z_][a-z0-9_]{2,50}$
+class-rgx=[A-Z_][a-zA-Z0-9]+$
 variable-rgx=[a-z_][a-z0-9_]{2,30}$
 const-rgx=(([A-Z_][A-Z0-9_]*)|(__.*__))$
 attr-rgx=[a-z_][a-z0-9_]{2,30}$
 argument-rgx=[a-z_][a-z0-9_]{2,30}$
-class-attribute-rgx=([A-Za-z_][A-Za-z0-9_]{2,30}|(__.*__))$
-inlinevar-rgx=[A-Za-z_][A-Za-z0-9_]*$
-class-rgx=[A-Z_][a-zA-Z0-9]+$
 module-rgx=(([a-z_][a-z0-9_]*)|([A-Z][a-zA-Z0-9]+))$
-method-rgx=[a-z_][a-z0-9_]{2,30}$
-no-docstring-rgx=__.*__
-docstring-min-length=-1
-
-[TYPECHECK]
-ignore-mixin-members=yes
-ignored-classes=SQLObject
-unsafe-load-any-extension=yes
 
 [VARIABLES]
-init-import=no
 dummy-variables-rgx=_$|dummy
 additional-builtins=
 
 [SIMILARITIES]
 min-similarity-lines=4
-ignore-comments=yes
-ignore-docstrings=yes
-ignore-imports=no
+ignore-imports=yes
 
-[MISCELLANEOUS]
-notes=FIXME,XXX,TODO
-
-[IMPORTS]
-deprecated-modules=regsub,TERMIOS,Bastion,rexec
-import-graph=
-ext-import-graph=
-int-import-graph=
+[TYPECHECK]
+ignored-modules=numpy,tensorflow,torch,cv2
+ignored-classes=SQLObject,numpy
 
 [DESIGN]
 max-args=10
-ignored-argument-names=_.*
 max-locals=25
 max-returns=11
 max-branches=27
@@ -71,10 +47,18 @@ min-public-methods=2
 max-public-methods=25
 
 [CLASSES]
-ignore-iface-methods=isImplementedBy,deferred,extends,names,namesAndDescriptions,queryDescriptionFor,getBases,getDescriptionFor,getDoc,getName,getTaggedValue,getTaggedValueTags,isEqualOrExtendedBy,setTaggedValue,isImplementedByInstancesOf,adaptWith,is_implemented_by
 defining-attr-methods=__init__,__new__,setUp
 valid-classmethod-first-arg=cls
 valid-metaclass-classmethod-first-arg=mcs
 
 [EXCEPTIONS]
 overgeneral-exceptions=builtins.Exception
+
+[MISCELLANEOUS]
+notes=FIXME,XXX,TODO
+
+[IMPORTS]
+deprecated-modules=regsub,TERMIOS,Bastion,rexec
+import-graph=
+ext-import-graph=
+int-import-graph=

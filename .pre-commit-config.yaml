@@ -20,7 +20,7 @@ repos:
         entry: yapf
         language: python
         types: [python]
-        args: [--style=google, --parallel, --in-place]
+        args: [--style=google, --parallel, --in-place, --verbose]
         additional_dependencies: [toml]
 
 -   repo: local
@@ -32,6 +32,7 @@ repos:
         types: [python]
         pass_filenames: false
         always_run: true
+        args: ["-v", "--full-trace"]
 
     -   id: pylint
         name: pylint

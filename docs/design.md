@@ -18,7 +18,7 @@ binary:
 input:
   files_directory: "/path/to/input/files"
   file_pattern: "*.dat"  # Optional: glob pattern for input files
-  
+
 output:
   directory: "/path/to/output"
   file_suffix: ".output"
@@ -27,7 +27,7 @@ resource_limits:
   cpu_threshold_percent: 80
   memory_threshold_percent: 75
   disk_usage_threshold_percent: 90
-  
+
 calibration:
   enabled: true
   warmup_time_seconds: 30  # Time to wait for process to stabilize
@@ -43,7 +43,7 @@ plugins:
       class: "ConnectionMetricsCollector"
       config:
         ports: [8080, 8081]
-  
+
   capacity:
     - name: "resource_capacity"
       enabled: true
@@ -64,12 +64,12 @@ class MetricsCollectorPlugin(ABC):
     def initialize(self, config: dict) -> None:
         """Initialize the plugin with configuration"""
         pass
-    
+
     @abstractmethod
     def collect_metrics(self, process: Process) -> Dict[str, float]:
         """Collect metrics for a specific process"""
         pass
-    
+
     @abstractmethod
     def collect_system_metrics(self) -> Dict[str, float]:
         """Collect system-wide metrics"""
@@ -83,9 +83,9 @@ class CapacityCalculatorPlugin(ABC):
     def initialize(self, config: dict) -> None:
         """Initialize the calculator with configuration"""
         pass
-    
+
     @abstractmethod
-    def calculate_capacity(self, 
+    def calculate_capacity(self,
                          calibration_metrics: Dict[str, float],
                          current_metrics: Dict[str, float]) -> int:
         """Calculate how many processes can run based on metrics"""
