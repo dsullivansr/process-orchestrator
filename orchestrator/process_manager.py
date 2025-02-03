@@ -25,7 +25,9 @@ class ProcessManager:
             thresholds: Optional resource thresholds
         """
         self.config = config
-        self.resource_monitor = ResourceMonitor(thresholds)
+        self.resource_monitor = ResourceMonitor(
+            thresholds=thresholds,
+            output_dir=self.config.directories.output_dir)
         self.processes: Dict[str, subprocess.Popen] = {}
         self.completed_files: List[str] = []
         self.failed_files: List[str] = []
