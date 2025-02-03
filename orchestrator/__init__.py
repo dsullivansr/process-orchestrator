@@ -1,7 +1,7 @@
 """Process orchestrator package."""
 
 from .config import Config, BinaryConfig, DirectoryConfig
-from .process_manager import ProcessManager, ProcessInfo
+from .process_manager import ProcessManager
 from .resource_monitor import ResourceMonitor
 
 __all__ = [
@@ -9,6 +9,5 @@ __all__ = [
     'BinaryConfig',
     'DirectoryConfig',
     'ProcessManager',
-    'ProcessInfo',
     'ResourceMonitor',
 ]

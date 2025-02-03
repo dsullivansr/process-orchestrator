@@ -35,6 +35,13 @@ class TestFileCopy(unittest.TestCase):
         with open(self.large_file, 'wb') as f:
             f.write(b'0' * 1024 * 1024)
 
+        # Create input file list
+        self.input_list_file = os.path.join(self.temp_base, 'input_files.txt')
+        with open(self.input_list_file, 'w', encoding='utf-8') as f:
+            for test_file in self.test_files:
+                f.write(f'{test_file}\n')
+            f.write(f'{self.large_file}\n')
+
         # Initialize process manager
         config = Config(
             **{
@@ -43,7 +50,7 @@ class TestFileCopy(unittest.TestCase):
                     'flags': ['{input_file}', '{output_file}']
                 },
                 'directories': {
-                    'input_dir': self.input_dir,
+                    'input_file_list': self.input_list_file,
                     'output_dir': self.output_dir,
                     'output_suffix': '.bak'
                 }
@@ -52,8 +59,8 @@ class TestFileCopy(unittest.TestCase):
 
     def test_large_file(self):
         """Test copying a large file."""
-        process_info = self.manager.start_process(self.large_file)
-        self.assertIsNotNone(process_info)
+        process = self.manager.start_process(self.large_file)
+        self.assertIsNotNone(process)
 
         # Wait for process to complete
         output_file = os.path.join(self.output_dir,
@@ -74,16 +81,16 @@ class TestFileCopy(unittest.TestCase):
 
     def test_nonexistent_file(self):
         """Test copying a non-existent file."""
-        process_info = self.manager.start_process('/nonexistent/file.txt')
-        self.assertIsNone(process_info)
+        with self.assertRaises(FileNotFoundError):
+            self.manager.start_process('/nonexistent/file.txt')
 
     def test_parallel_file_copy(self):
         """Test copying multiple files in parallel."""
         processes = []
         for test_file in self.test_files:
-            process_info = self.manager.start_process(test_file)
-            self.assertIsNotNone(process_info)
-            processes.append(process_info)
+            process = self.manager.start_process(test_file)
+            self.assertIsNotNone(process)
+            processes.append(process)
 
         # Wait for all processes to complete
         timeout = 5

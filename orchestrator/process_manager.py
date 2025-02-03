@@ -1,170 +1,164 @@
-"""Process Manager module for handling process execution and monitoring."""
+"""Process management functionality."""
 
-import logging
 import os
 import subprocess
 import sys
-import time
-from dataclasses import dataclass
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
-from psutil import Process, NoSuchProcess, AccessDenied
+import psutil
 
 from orchestrator.config import Config
 
 
-@dataclass
-class ProcessInfo:
-    """Information about a running process."""
-    pid: int
-    input_file: str
-    output_file: str
-
-
 class ProcessManager:
-    """Manages process execution and monitoring."""
+    """Process manager for handling file processing jobs."""
 
-    def __init__(self, config_obj: Config):
-        """Initialize the process manager.
+    def __init__(self, job_config: Config):
+        """Initialize process manager.
 
         Args:
-            config_obj: Configuration object containing binary and directory settings
+            job_config: Configuration for process management
         """
-        self.config = config_obj
-        self.process = None
-        self.logger = logging.getLogger(__name__)
+        self.config = job_config
+        self.processes: Dict[str, psutil.Process] = {}
 
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-    def _build_command(self, input_file: str, output_file: str) -> List[str]:
-        """Build command line arguments.
+    def build_command(self, input_file: str) -> List[str]:
+        """Build command for processing a file.
 
         Args:
-            input_file: Path to the input file
-            output_file: Path to the output file
+            input_file: Path to input file
 
         Returns:
-            List of command line arguments
+            List of command parts
         """
-        cmd = [self.config.binary.path]
+        output_file = self._get_output_path(input_file)
+        command = [self.config.binary.path]
+
+        # Add flags with templated values
         for flag in self.config.binary.flags:
             if '{input_file}' in flag:
-                cmd.append(flag.replace('{input_file}', input_file))
+                command.append(flag.replace('{input_file}', input_file))
             elif '{output_file}' in flag:
-                cmd.append(flag.replace('{output_file}', output_file))
+                command.append(flag.replace('{output_file}', output_file))
             else:
-                cmd.append(flag)
-        return cmd
+                command.append(flag)
+
+        return command
 
     def _get_output_path(self, input_file: str) -> str:
-        """Generate output file path based on input file and configuration.
+        """Get output path for input file.
 
         Args:
-            input_file: Path to the input file
+            input_file: Path to input file
 
         Returns:
-            Path to the output file
+            Path to output file
         """
-        base_name = os.path.basename(input_file)
+        basename = os.path.basename(input_file)
         if self.config.directories.output_suffix:
-            base_name += self.config.directories.output_suffix
-        return os.path.join(self.config.directories.output_dir, base_name)
+            basename = f"{basename}{self.config.directories.output_suffix}"
+        return os.path.join(self.config.directories.output_dir, basename)
 
-    def start_process(self, input_file: str) -> Optional[ProcessInfo]:
-        """Start a new process.
+    def start_process(self, input_file: str) -> Optional[psutil.Process]:
+        """Start a new process for file processing.
 
         Args:
-            input_file: Path to the input file
+            input_file: Path to input file
 
         Returns:
-            ProcessInfo object if process started successfully, None otherwise
+            Process info if started successfully, None otherwise
 
         Raises:
-            ValueError: If input and output files would be the same
+            FileNotFoundError: If input file does not exist
+            ValueError: If process is already running for input file
+            subprocess.SubprocessError: If process fails to start
         """
         if not os.path.exists(input_file):
-            self.logger.error("Input file does not exist: %s", input_file)
-            return None
+            raise FileNotFoundError(f"Input file not found: {input_file}")
 
-        output_file = self._get_output_path(input_file)
+        if input_file in self.processes:
+            raise ValueError(f"Process already running for {input_file}")
 
-        if os.path.abspath(input_file) == os.path.abspath(output_file):
-            raise ValueError(
-                f"Input and output files would be the same: {input_file}")
-
-        os.makedirs(self.config.directories.output_dir, exist_ok=True)
-
+        command = self.build_command(input_file)
         try:
-            cmd = self._build_command(input_file, output_file)
-            with subprocess.Popen(cmd,
+            with subprocess.Popen(command,
                                   stdout=subprocess.PIPE,
                                   stderr=subprocess.PIPE,
                                   universal_newlines=True) as process:
-                self.process = ProcessInfo(pid=process.pid,
-                                           input_file=input_file,
-                                           output_file=output_file)
-                self.logger.info("Started process with PID: %d", process.pid)
-                return self.process
-        except Exception as e:
-            self.logger.error("Failed to start process: %s", str(e))
-            return None
+                self.processes[input_file] = psutil.Process(process.pid)
+                return self.processes[input_file]
+        except subprocess.SubprocessError as e:
+            raise subprocess.SubprocessError(
+                f"Failed to start process: {str(e)}") from e
 
-    def get_process_metrics(self, process_info: ProcessInfo) -> dict:
-        """Get current metrics for a process.
+    def get_process_info(self, input_file: str) -> Optional[Tuple[str, float]]:
+        """Get process information.
 
         Args:
-            process_info: Process to get metrics for.
+            input_file: Path to input file
 
         Returns:
-            Dictionary containing process metrics.
+            Tuple of (status, cpu_percent) if process exists, None otherwise
         """
+        if input_file not in self.processes:
+            return None
+
         try:
-            proc = Process(process_info.pid)
-            return {
-                'cpu_percent': proc.cpu_percent(),
-                'memory_rss': proc.memory_info().rss,
-                'status': proc.status()
-            }
-        except (NoSuchProcess, AccessDenied) as e:
-            self.logger.error("Failed to collect metrics for PID %d: %s",
-                              process_info.pid, e)
-            return {}
+            process = self.processes[input_file]
+            status = process.status()
+            cpu_percent = process.cpu_percent()
+            return status, cpu_percent
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            del self.processes[input_file]
+            return None
+
+    def get_active_processes(self) -> List[psutil.Process]:
+        """Get list of active processes.
+
+        Returns:
+            List of active process objects
+        """
+        active_processes = []
+        for input_file, process in list(self.processes.items()):
+            try:
+                if process.is_running():
+                    active_processes.append(process)
+                else:
+                    del self.processes[input_file]
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                del self.processes[input_file]
+        return active_processes
+
+    def stop_process(self, input_file: str) -> bool:
+        """Stop a running process.
+
+        Args:
+            input_file: Path to input file
+
+        Returns:
+            True if process was stopped, False otherwise
+        """
+        if input_file not in self.processes:
+            return False
+
+        try:
+            process = self.processes[input_file]
+            process.terminate()
+            process.wait(timeout=5)
+            return True
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return False
+        finally:
+            del self.processes[input_file]
 
     def run(self):
-        """Main run loop."""
-        # Start the process
+        if len(sys.argv) != 2:
+            print("Usage: python orchestrator.py <path_to_input_file>")
+            sys.exit(1)
+
         input_file = sys.argv[1]
         self.start_process(input_file)
 
-        try:
-            while True:
-                if self.process is None:
-                    self.logger.error("Process has not been started")
-                    break
-
-                if self.process.pid is None:
-                    self.logger.error("Process PID is None")
-                    break
-
-                metrics = self.get_process_metrics(self.process)
-                self.logger.info("Process metrics: %s", metrics)
-                time.sleep(1)  # Collect metrics every second
-
-        except KeyboardInterrupt:
-            self.logger.info("Shutting down orchestrator...")
-            if self.process and self.process.pid is not None:
-                proc = Process(self.process.pid)
-                proc.terminate()
-                proc.wait(timeout=5)
-
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python orchestrator.py <path_to_input_file>")
-        sys.exit(1)
-
-    config = Config.load_from_file('config.json')
-    orchestrator = ProcessManager(config)
-    orchestrator.run()
+    ProcessManager(Config()).run()

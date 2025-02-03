@@ -1,76 +1,74 @@
-"""Unit tests for configuration management."""
+"""Unit tests for configuration module."""
 
 import os
 import tempfile
 import unittest
 
-import yaml
-
 from orchestrator.config import Config
 
 
 class TestConfig(unittest.TestCase):
-    """Test configuration loading and validation."""
+    """Test cases for Config class."""
 
     def setUp(self):
         """Set up test fixtures."""
-        self.test_config = {
-            'binary': {
-                'path': '/bin/cp',
-                'flags': ['{input_file}', '{output_file}']
-            },
-            'directories': {
-                'input_dir': '/data/input',
-                'output_dir': '/data/output',
-                'output_suffix': '.bak'
-            }
-        }
+        self.test_dir = tempfile.mkdtemp()
+        self.input_list_file = os.path.join(self.test_dir, 'input_files.txt')
+        self.output_dir = os.path.join(self.test_dir, 'output')
 
-        # Create test config file
-        self.temp_dir = tempfile.mkdtemp()
-        self.config_path = os.path.join(self.temp_dir, 'config.yaml')
-        with open(self.config_path, 'w', encoding='utf-8') as f:
-            yaml.dump(self.test_config, f)
+        # Create test input list file
+        with open(self.input_list_file, 'w', encoding='utf-8') as f:
+            f.write('/path/to/file1.txt\n')
+            f.write('/path/to/file2.txt\n')
 
     def test_load_config_from_file(self):
-        """Test loading configuration from a YAML file."""
-        config = Config.load_from_file(self.config_path)
+        """Test loading configuration from YAML file."""
+        config_path = os.path.join(self.test_dir, 'config.yaml')
+        with open(config_path, 'w', encoding='utf-8') as f:
+            f.write(f'''
+binary:
+  path: /bin/cp
+  flags:
+    - "{{input_file}}"
+    - "{{output_file}}"
+directories:
+  input_file_list: {self.input_list_file}
+  output_dir: {self.output_dir}
+  output_suffix: _processed
+''')
+
+        config = Config.from_yaml(config_path)
         self.assertEqual(config.binary.path, '/bin/cp')
         self.assertEqual(config.binary.flags, ['{input_file}', '{output_file}'])
-        self.assertEqual(config.directories.input_dir, '/data/input')
-        self.assertEqual(config.directories.output_dir, '/data/output')
-        self.assertEqual(config.directories.output_suffix, '.bak')
+        self.assertEqual(config.directories.input_file_list,
+                         self.input_list_file)
+        self.assertEqual(config.directories.output_dir, self.output_dir)
+        self.assertEqual(config.directories.output_suffix, '_processed')
 
     def test_load_config_missing_file(self):
-        """Test handling of missing configuration file."""
-        # Test with non-existent file
+        """Test loading configuration from non-existent file."""
         with self.assertRaises(FileNotFoundError):
-            Config.load_from_file('/nonexistent/config.yaml')
+            Config.from_yaml('/nonexistent/config.yaml')
 
     def test_load_config_with_kwargs(self):
         """Test loading configuration with keyword arguments."""
-        # Override some config values
-        override_config = {
-            'binary': {
-                'path': '/usr/bin/rsync',
-                'flags': ['-av', '{input_file}', '{output_file}']
-            },
-            'directories': {
-                'input_dir': '/data/input',
-                'output_dir': '/data/output',
-                'output_suffix': '.new'
-            }
-        }
+        config = Config(binary={
+            'path': '/bin/cp',
+            'flags': ['{input_file}', '{output_file}']
+        },
+                        directories={
+                            'input_file_list': self.input_list_file,
+                            'output_dir': self.output_dir,
+                            'output_suffix': '_processed'
+                        })
 
-        config = Config(**override_config)
-        self.assertEqual(config.binary.path, '/usr/bin/rsync')
-        self.assertEqual(config.binary.flags,
-                         ['-av', '{input_file}', '{output_file}'])
-        self.assertEqual(config.directories.input_dir, '/data/input')
-        self.assertEqual(config.directories.output_dir, '/data/output')
-        self.assertEqual(config.directories.output_suffix, '.new')
+        self.assertEqual(config.binary.path, '/bin/cp')
+        self.assertEqual(config.binary.flags, ['{input_file}', '{output_file}'])
+        self.assertEqual(config.directories.input_file_list,
+                         self.input_list_file)
+        self.assertEqual(config.directories.output_dir, self.output_dir)
+        self.assertEqual(config.directories.output_suffix, '_processed')
 
     def tearDown(self):
         """Clean up test fixtures."""
-        if os.path.exists(self.temp_dir):
-            os.system(f"rm -rf {self.temp_dir}")
+        os.system(f"rm -rf {self.test_dir}")

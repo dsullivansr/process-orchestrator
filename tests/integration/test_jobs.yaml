@@ -8,7 +8,7 @@ file_copy_job:
       - "{input_file}"
       - "{output_file}"
   directories:
-    input_dir: /tmp/process_orchestrator/input
+    input_file_list: /tmp/process_orchestrator/input_files.txt
     output_dir: /tmp/process_orchestrator/output
     output_suffix: .copy  # Add .copy suffix to output files
 
@@ -22,7 +22,7 @@ compression_job:
       - ">"
       - "{output_file}"
   directories:
-    input_dir: /tmp/process_orchestrator/input
+    input_file_list: /tmp/process_orchestrator/input_files.txt
     output_dir: /tmp/process_orchestrator/compressed
     output_suffix: .gz  # Add .gz suffix to output files
 
@@ -35,7 +35,7 @@ concat_job:
       - ">"
       - "{output_file}"
   directories:
-    input_dir: /tmp/process_orchestrator/input
+    input_file_list: /tmp/process_orchestrator/input_files.txt
     output_dir: /tmp/process_orchestrator/concat
     # No output_suffix specified - files will keep original names
 
@@ -50,6 +50,6 @@ inplace_job:
       - ">"
       - "{output_file}"
   directories:
-    input_dir: /tmp/process_orchestrator/workspace
-    output_dir: /tmp/process_orchestrator/workspace  # Same as input
-    output_suffix: .processed  # Required since input/output dirs are the same
+    input_file_list: /tmp/process_orchestrator/input_files.txt
+    output_dir: /tmp/process_orchestrator/output
+    output_suffix: .processed  # Required for in-place processing
