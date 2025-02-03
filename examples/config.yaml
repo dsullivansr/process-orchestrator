@@ -1,0 +1,10 @@
+binary:
+  path: "/usr/bin/example"
+  flags:
+    - "--input={input_file}"
+    - "--output={output_file}"
+    - "--verbose"
+
+directories:
+  input: "/path/to/input/files"
+  output: "/path/to/output/files"
