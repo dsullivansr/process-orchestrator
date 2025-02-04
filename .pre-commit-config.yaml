@@ -20,7 +20,7 @@ repos:
         entry: yapf
         language: python
         types: [python]
-        args: [--style=google, --parallel, --in-place, --verbose]
+        args: [--style=.style.yapf, --parallel, --in-place, --verbose]
         additional_dependencies: [toml]
 
 -   repo: local
