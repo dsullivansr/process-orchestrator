@@ -15,22 +15,26 @@ logger = logging.getLogger(__name__)
 class ProcessManager:
     """Process manager for orchestrating file processing."""
 
-    def __init__(self,
-                 config: Config,
-                 thresholds: Optional[Dict[str, float]] = None) -> None:
+    def __init__(self, config: Config) -> None:
         """Initialize process manager.
 
         Args:
             config: Configuration object
-            thresholds: Optional resource thresholds
         """
         self.config = config
         self.resource_monitor = ResourceMonitor(
-            thresholds=thresholds,
+            thresholds={
+                'cpu_percent': config.resources.cpu_percent,
+                'memory_percent': config.resources.memory_percent,
+                'disk_percent': config.resources.disk_percent,
+                'max_processes': config.resources.max_processes
+            },
             output_dir=self.config.directories.output_dir)
         self.processes: Dict[str, subprocess.Popen] = {}
         self.completed_files: List[str] = []
         self.failed_files: List[str] = []
+        self.retry_counts: Dict[str, int] = {}
+        self.max_retries = 3
 
     def build_command(self, input_file: str) -> List[str]:
         """Build command for processing a file.
@@ -50,9 +54,11 @@ class ProcessManager:
         # Build command with direct string substitution
         cmd = [self.config.binary.path]
         for flag in self.config.binary.flags:
-            cmd.append(
-                flag.format(input_file=input_file, output_file=output_file))
+            formatted_flag = flag.format(input_file=input_file,
+                                         output_file=output_file)
+            cmd.append(formatted_flag)
 
+        logger.info("Built command: %s", ' '.join(cmd))
         return cmd
 
     def _get_input_files(self) -> List[str]:
@@ -78,6 +84,17 @@ class ProcessManager:
         Raises:
             FileNotFoundError: If input file does not exist
         """
+        # Check if file is already being processed or has been processed
+        if input_file in self.processes:
+            logger.warning("File %s is already being processed", input_file)
+            return None
+        if input_file in self.completed_files:
+            logger.warning("File %s has already been processed", input_file)
+            return None
+        if input_file in self.failed_files:
+            logger.warning("File %s has already failed", input_file)
+            return None
+
         if not os.path.isfile(input_file):
             raise FileNotFoundError(f"Input file not found: {input_file}")
 
@@ -85,22 +102,24 @@ class ProcessManager:
         cmd = self.build_command(input_file)
 
         # Create output directory if it doesn't exist
-        output_dir = os.path.dirname(cmd[-1].split('=')[-1])
+        output_dir = os.path.dirname(cmd[-1])
         os.makedirs(output_dir, exist_ok=True)
 
         # Start process
         logger.info("Starting process for file: %s", input_file)
-        logger.debug("Command: %s", ' '.join(cmd))
+        logger.info("Command: %s", ' '.join(cmd))
 
         try:
-            with subprocess.Popen(cmd,
-                                  stdout=subprocess.PIPE,
-                                  stderr=subprocess.PIPE,
-                                  text=True,
-                                  bufsize=1,
-                                  universal_newlines=True) as process:
-                self.processes[input_file] = process
-                return process
+            # pylint: disable=consider-using-with
+            process = subprocess.Popen(cmd,
+                                       stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE,
+                                       text=True,
+                                       bufsize=1,
+                                       close_fds=True)
+            self.processes[input_file] = process
+            self.resource_monitor.running_processes.add(input_file)
+            return process
         except Exception as e:
             logger.error("Failed to start process for file %s: %s", input_file,
                          e)
@@ -134,21 +153,34 @@ class ProcessManager:
             return True
 
         logger.error(
-            "Process failed for file %s with return code %d\nStdout: %s\nStderr: %s",
-            input_file, return_code, stdout, stderr)
-        self.failed_files.append(input_file)
-        return False
+            "Process failed for file %s with return code %d\nStdout:\n%s\nStderr:\n%s",
+            input_file, return_code, stdout or "<no output>", stderr or
+            "<no output>")
+
+        # Track retries
+        self.retry_counts[input_file] = self.retry_counts.get(input_file, 0) + 1
+        if self.retry_counts[input_file] >= self.max_retries:
+            logger.error("Max retries reached for file %s, marking as failed",
+                         input_file)
+            self.failed_files.append(input_file)
+            return False
+
+        logger.info("Retrying file %s (attempt %d/%d)", input_file,
+                    self.retry_counts[input_file], self.max_retries)
+        return None  # Keep the process in the queue for retry
 
     def _check_processes(self) -> None:
         """Check status of all running processes."""
-        completed = []
+        finished = []
         for input_file, process in self.processes.items():
-            if self._check_process(input_file, process):
-                completed.append(input_file)
+            result = self._check_process(input_file, process)
+            if result is not None:  # Process finished (success or failure)
+                finished.append(input_file)
 
-        # Remove completed processes
-        for input_file in completed:
+        # Remove finished processes (both completed and failed)
+        for input_file in finished:
             del self.processes[input_file]
+            self.resource_monitor.running_processes.remove(input_file)
 
     def run(self) -> int:
         """Run process manager.
@@ -169,8 +201,19 @@ class ProcessManager:
             # Start new processes if resources available
             while (current_index < total_files and
                    self.resource_monitor.can_start_new_process()):
-                self.start_process(input_files[current_index])
-                current_index += 1
+                input_file = input_files[current_index]
+                if input_file not in self.processes and \
+                   input_file not in self.completed_files and \
+                   input_file not in self.failed_files and \
+                   input_file not in self.resource_monitor.running_processes:
+                    process = self.start_process(input_file)
+                    if process:
+                        current_index += 1
+                    else:
+                        # If start_process failed, skip this file
+                        current_index += 1
+                else:
+                    current_index += 1
 
             # Sleep briefly to avoid busy waiting
             if self.processes:
@@ -181,4 +224,5 @@ class ProcessManager:
         logger.info("Completed files: %d", len(self.completed_files))
         logger.info("Failed files: %d", len(self.failed_files))
 
-        return len(self.failed_files)
+        # Return non-zero exit code if any files failed
+        return 1 if self.failed_files else 0

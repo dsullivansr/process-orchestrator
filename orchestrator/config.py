@@ -46,6 +46,26 @@ class DirectoryConfig:
 
 
 @dataclass
+class ResourceConfig:
+    """Resource threshold configuration."""
+    cpu_percent: float = 80.0
+    memory_percent: float = 80.0
+    disk_percent: float = 90.0
+    max_processes: int = 2
+
+    def __post_init__(self):
+        """Validate resource configuration."""
+        if not 0 <= self.cpu_percent <= 100:
+            raise ValueError("CPU percent must be between 0 and 100")
+        if not 0 <= self.memory_percent <= 100:
+            raise ValueError("Memory percent must be between 0 and 100")
+        if not 0 <= self.disk_percent <= 100:
+            raise ValueError("Disk percent must be between 0 and 100")
+        if self.max_processes < 1:
+            raise ValueError("Max processes must be at least 1")
+
+
+@dataclass
 class Config:
     """Configuration for process orchestration."""
     binary: BinaryConfig
@@ -55,7 +75,7 @@ class Config:
         """Initialize configuration.
 
         Args:
-            **kwargs: Configuration parameters including 'binary' and 'directories'
+            **kwargs: Configuration parameters including 'binary', 'directories', and 'resources'
 
         Raises:
             ValueError: If configuration is invalid
@@ -80,6 +100,15 @@ class Config:
         else:
             raise TypeError(
                 "Directory configuration must be a dict or DirectoryConfig")
+
+        # Handle resource config
+        resources = kwargs.get('resources', {})
+        if isinstance(resources, dict):
+            self.resources = ResourceConfig(**resources)
+        elif isinstance(resources, ResourceConfig):
+            self.resources = resources
+        else:
+            self.resources = ResourceConfig()
 
     @classmethod
     def from_yaml(cls, config_path: str) -> 'Config':

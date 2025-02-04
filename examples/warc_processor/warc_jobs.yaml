@@ -1,11 +1,14 @@
 binary:
   path: /home/dsullivan/CascadeProjects/warc-processor/dist/warc-processor
   flags:
-    - --parser=lxml
-    - --config=/home/dsullivan/CascadeProjects/warc-processor/config.yaml
-    - --log-level=INFO
+    - --processor
+    - lexbor
+    - --log-level
+    - INFO
+    - --input
     - "{input_file}"
-    - --output={output_file}
+    - --output
+    - "{output_file}"
 
 directories:
   input_file_list: /home/dsullivan/CascadeProjects/process-orchestrator/examples/warc_processor/input_warcs.txt

@@ -5,7 +5,6 @@ import argparse
 import logging
 import os
 import sys
-from typing import Dict
 
 from orchestrator.config import Config
 from orchestrator.process_manager import ProcessManager
@@ -96,15 +95,13 @@ def main() -> int:
         config.directories.input_file_list = args.input_file_list
         config.directories.output_dir = args.output_dir
 
-        # Set resource thresholds
-        thresholds: Dict[str, float] = {
-            'cpu_percent': args.max_cpu_percent,
-            'memory_percent': args.max_memory_percent,
-            'disk_percent': 90.0  # Default disk threshold
-        }
+        # Update resource thresholds from CLI arguments
+        config.resources.cpu_percent = args.max_cpu_percent
+        config.resources.memory_percent = args.max_memory_percent
+        config.resources.max_processes = args.max_processes
 
         # Initialize process manager
-        manager = ProcessManager(config, thresholds=thresholds)
+        manager = ProcessManager(config)
 
         # Start processing
         return manager.run()

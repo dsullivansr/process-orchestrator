@@ -61,16 +61,14 @@ class TestProcessManager(unittest.TestCase):
         """Test starting a process."""
         # Mock subprocess.Popen
         with patch('subprocess.Popen') as mock_popen:
-            mock_process = mock_popen.return_value.__enter__.return_value
+            mock_process = mock_popen.return_value
             mock_process.pid = 12345
 
-            with patch('psutil.Process') as mock_psutil:
-                mock_psutil.return_value.pid = 12345
-                process = self.manager.start_process(self.test_files[0])
+            process = self.manager.start_process(self.test_files[0])
 
-                # Check process was started with correct arguments
-                self.assertIsNotNone(process)
-                self.assertEqual(process.pid, 12345)
+            # Check process was started with correct arguments
+            self.assertIsNotNone(process)
+            self.assertEqual(process.pid, 12345)
 
     def test_start_process_nonexistent_file(self):
         """Test starting a process with non-existent file."""

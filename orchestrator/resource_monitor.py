@@ -21,9 +21,11 @@ class ResourceMonitor:
         self.thresholds = thresholds or {
             'cpu_percent': 80.0,
             'memory_percent': 80.0,
-            'disk_percent': 90.0
+            'disk_percent': 90.0,
+            'max_processes': 2
         }
         self.output_dir = output_dir or os.getcwd()
+        self.running_processes = set()
 
     def get_system_metrics(self) -> Dict[str, float]:
         """Get current system metrics.
@@ -43,5 +45,16 @@ class ResourceMonitor:
         Returns:
             True if new process can be started, False otherwise
         """
+        if len(self.running_processes) >= self.thresholds['max_processes']:
+            return False
+
         metrics = self.get_system_metrics()
-        return all(metrics[k] < v for k, v in self.thresholds.items())
+        resource_checks = {
+            'cpu_percent':
+                metrics['cpu_percent'] < self.thresholds['cpu_percent'],
+            'memory_percent':
+                metrics['memory_percent'] < self.thresholds['memory_percent'],
+            'disk_percent':
+                metrics['disk_percent'] < self.thresholds['disk_percent']
+        }
+        return all(resource_checks.values())
