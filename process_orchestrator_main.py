@@ -6,7 +6,7 @@ import logging
 import os
 import sys
 
-from orchestrator.config import Config
+from orchestrator.config import Config, OrchestratorOptions
 from orchestrator.process_manager import ProcessManager
 
 # Configure logging
@@ -29,11 +29,13 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         '--input-file-list',
-        required=True,
-        help='Path to file containing list of input files'
+        required=False,
+        help='Path to file containing list of input files (overrides config file)'
     )
     parser.add_argument(
-        '--output-dir', required=True, help='Path to output directory'
+        '--output-dir',
+        required=False,
+        help='Path to output directory (overrides config file)'
     )
     parser.add_argument(
         '--log-level',
@@ -62,26 +64,17 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def validate_paths(args: argparse.Namespace) -> None:
-    """Validate input paths.
+def validate_config_file(config_path: str) -> None:
+    """Validate config file exists.
 
     Args:
-        args: Command line arguments
+        config_path: Path to config file
 
     Raises:
-        FileNotFoundError: If input file list or config file does not exist
+        FileNotFoundError: If config file does not exist
     """
-    if not os.path.isfile(args.config):
-        raise FileNotFoundError(f"Config file not found: {args.config}")
-
-    if not os.path.isfile(args.input_file_list):
-        raise FileNotFoundError(
-            f"Input file list not found: {args.input_file_list}"
-        )
-
-    # Create output directory if it doesn't exist
-    os.makedirs(args.output_dir, exist_ok=True)
-    logger.info("Output directory: %s", args.output_dir)
+    if not os.path.isfile(config_path):
+        raise FileNotFoundError(f"Configuration file not found: {config_path}")
 
 
 def main() -> int:
@@ -92,25 +85,31 @@ def main() -> int:
     """
     try:
         args = parse_args()
-        validate_paths(args)
-
-        # Configure logging
-        logging.basicConfig(
-            level=getattr(logging, args.log_level),
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
+        validate_config_file(args.config)
 
         # Load base configuration
         config = Config.from_yaml(args.config)
 
-        # Update directories with CLI arguments
-        config.directories.input_file_list = args.input_file_list
-        config.directories.output_dir = args.output_dir
+        # Combine and validate options from args and config
+        try:
+            options = OrchestratorOptions.from_args_and_config(args, config)
+        except (ValueError, FileNotFoundError) as e:
+            logger.error(str(e))
+            return 1
 
-        # Update resource thresholds from CLI arguments
-        config.resources.cpu_percent = args.max_cpu_percent
-        config.resources.memory_percent = args.max_memory_percent
-        config.resources.max_processes = args.max_processes
+        # Configure logging
+        logging.basicConfig(
+            level=getattr(logging, options.log_level),
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+        logger.info("Output directory: %s", options.output_dir)
+
+        # Update config with combined options
+        config.directories.input_file_list = options.input_file_list
+        config.directories.output_dir = options.output_dir
+        config.resources.cpu_percent = options.max_cpu_percent
+        config.resources.memory_percent = options.max_memory_percent
+        config.resources.max_processes = options.max_processes
 
         # Initialize process manager
         manager = ProcessManager(config)

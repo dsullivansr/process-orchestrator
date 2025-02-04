@@ -88,6 +88,52 @@ class ResourceConfig:
 
 
 @dataclass
+class OrchestratorOptions:
+    """Combined options from command line and config file."""
+    input_file_list: str
+    output_dir: str
+    log_level: str = 'INFO'
+    max_cpu_percent: float = 80.0
+    max_memory_percent: float = 80.0
+    max_processes: int = 2
+
+    def __post_init__(self):
+        """Validate options."""
+        if not self.input_file_list:
+            raise ValueError('Input file list must be provided')
+        if not self.output_dir:
+            raise ValueError('Output directory must be provided')
+        if not os.path.isfile(self.input_file_list):
+            raise FileNotFoundError(
+                f'Input file list not found: {self.input_file_list}'
+            )
+        os.makedirs(self.output_dir, exist_ok=True)
+
+    @classmethod
+    def from_args_and_config(
+        cls, args: 'argparse.Namespace', config: 'Config'
+    ) -> 'OrchestratorOptions':
+        """Create options from command line args and config file.
+
+        Args:
+            args: Command line arguments
+            config: Config from YAML file
+
+        Returns:
+            Combined options
+        """
+        return cls(
+            input_file_list=args.input_file_list
+            or config.directories.input_file_list,
+            output_dir=args.output_dir or config.directories.output_dir,
+            log_level=args.log_level,
+            max_cpu_percent=args.max_cpu_percent,
+            max_memory_percent=args.max_memory_percent,
+            max_processes=args.max_processes
+        )
+
+
+@dataclass
 class Config:
     """Configuration for process orchestration."""
     binary: BinaryConfig
