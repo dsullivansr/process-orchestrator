@@ -3,7 +3,6 @@
 import logging
 import os
 import subprocess
-import time
 from typing import Dict, List, Optional
 
 import psutil
@@ -17,11 +16,14 @@ logger = logging.getLogger(__name__)
 class ProcessManager:
     """Process manager for orchestrating file processing."""
 
-    def __init__(self, config: Config) -> None:
+    def __init__(
+        self, config: Config, *, skip_calibration: bool = False
+    ) -> None:
         """Initialize process manager.
 
         Args:
             config: Configuration object
+            skip_calibration: If True, skip resource usage calibration
         """
         self.config = config
         self.processes: Dict[str, subprocess.Popen] = {}
@@ -41,10 +43,11 @@ class ProcessManager:
             output_dir=self.config.directories.output_dir
         )
 
-        # Calibrate resource usage if input files exist
-        input_files = self._get_input_files()
-        if input_files:
-            self._calibrate_resource_usage(input_files[0])
+        # Calibrate resource usage if input files exist and calibration is not skipped
+        if not skip_calibration:
+            input_files = self._get_input_files()
+            if input_files:
+                self._calibrate_resource_usage(input_files[0])
 
     def _calibrate_resource_usage(self, test_file: str) -> None:
         """Run a test process to calibrate resource usage.
@@ -174,8 +177,7 @@ class ProcessManager:
         # Remove test file from tracking
         if test_file in self.processes:
             del self.processes[test_file]
-        if test_file in self.resource_monitor.running_processes:
-            self.resource_monitor.running_processes.remove(test_file)
+        self.resource_monitor.remove_process(test_file)
         if test_file in self.completed_files:
             self.completed_files.remove(test_file)
 
@@ -263,7 +265,9 @@ class ProcessManager:
                 close_fds=True
             )
             self.processes[input_file] = process
-            self.resource_monitor.running_processes.add(input_file)
+            self.resource_monitor.add_process(
+                input_file, psutil.Process(process.pid)
+            )
             return process
         except Exception as e:
             logger.error(
@@ -296,6 +300,7 @@ class ProcessManager:
             logger.info(
                 "Process completed successfully for file: %s", input_file
             )
+            # Process completed successfully
             self.completed_files.append(input_file)
             return True
 
@@ -306,7 +311,18 @@ class ProcessManager:
         )
 
         # Track retries
-        self.retry_counts[input_file] = self.retry_counts.get(input_file, 0) + 1
+        if input_file not in self.retry_counts:
+            self.retry_counts[input_file] = 0
+
+        # Log retry attempt
+        logger.info(
+            "Process failed for file %s (attempt %d/%d)", input_file,
+            self.retry_counts[input_file] + 1, self.max_retries
+        )
+
+        # Increment retry count after logging
+        self.retry_counts[input_file] += 1
+
         if self.retry_counts[input_file] >= self.max_retries:
             logger.error(
                 "Max retries reached for file %s, marking as failed", input_file
@@ -314,24 +330,45 @@ class ProcessManager:
             self.failed_files.append(input_file)
             return False
 
-        logger.info(
-            "Retrying file %s (attempt %d/%d)", input_file,
-            self.retry_counts[input_file], self.max_retries
-        )
+        # Process failed but can be retried
         return None  # Keep the process in the queue for retry
 
     def _check_processes(self) -> None:
         """Check status of all running processes."""
+        # Get a list of current processes to avoid modifying during iteration
+        current_processes = list(self.processes.items())
         finished = []
-        for input_file, process in self.processes.items():
-            result = self._check_process(input_file, process)
-            if result is not None:  # Process finished (success or failure)
-                finished.append(input_file)
+        needs_retry = []
 
-        # Remove finished processes (both completed and failed)
-        for input_file in finished:
-            del self.processes[input_file]
-            self.resource_monitor.running_processes.remove(input_file)
+        # Check each process
+        for input_file, process in current_processes:
+            result = self._check_process(input_file, process)
+            if result is True:
+                # Process completed successfully
+                finished.append(input_file)
+            elif result is False:
+                # Process failed and hit max retries
+                finished.append(input_file)
+            elif result is None and input_file not in self.completed_files:
+                # Process still running
+                continue
+
+            # Clean up process if it's done
+            if input_file in self.processes:
+                del self.processes[input_file]
+                self.resource_monitor.remove_process(input_file)
+
+            # Add to retry list if needed
+            if result is False and self.retry_counts[input_file
+                                                     ] < self.max_retries:
+                needs_retry.append(input_file)
+
+        # Retry failed processes that haven't hit max retries
+        for input_file in needs_retry:
+            if input_file not in self.failed_files:
+                process = self.start_process(input_file)
+                if process:
+                    self.processes[input_file] = process
 
     def run(self) -> int:
         """Run process manager.
@@ -353,27 +390,45 @@ class ProcessManager:
             while (current_index < total_files
                    and self.resource_monitor.can_start_new_process()):
                 input_file = input_files[current_index]
-                if input_file not in self.processes and \
-                   input_file not in self.completed_files and \
-                   input_file not in self.failed_files and \
-                   input_file not in self.resource_monitor.running_processes:
-                    process = self.start_process(input_file)
-                    if process:
-                        current_index += 1
-                    else:
-                        # If start_process failed, skip this file
-                        current_index += 1
-                else:
+                # Skip if file is already being processed or has been processed
+                if input_file in self.processes:
+                    current_index += 1
+                    continue
+
+                if input_file in self.completed_files or input_file in self.failed_files:
+                    current_index += 1
+                    continue
+
+                # Initialize retry count if not already set
+                if input_file not in self.retry_counts:
+                    self.retry_counts[input_file] = 0
+
+                process = self.start_process(input_file)
+                if process:
+                    self.processes[input_file] = process
+                    current_index += 1
+                elif self.retry_counts[input_file] >= self.max_retries:
+                    # If we've hit max retries, mark as failed and move on
+                    self.failed_files.append(input_file)
                     current_index += 1
 
-            # Sleep briefly to avoid busy waiting
-            if self.processes:
-                time.sleep(0.1)
+            # If no processes are running and we can't start new ones, we're done
+            if not self.processes and (
+                    current_index >= total_files
+                    or not self.resource_monitor.can_start_new_process()):
+                break
 
         # Log final status
         logger.info("Process manager finished")
         logger.info("Completed files: %d", len(self.completed_files))
         logger.info("Failed files: %d", len(self.failed_files))
 
-        # Return non-zero exit code if any files failed
-        return 1 if self.failed_files else 0
+        # Return non-zero exit code if any files failed or not all files were processed
+        total_files = len(input_files)
+        if len(self.failed_files) > 0:
+            logger.error("Some files failed processing")
+            return 1
+        if len(self.completed_files) < total_files:
+            logger.error("Not all files were processed")
+            return 1
+        return 0
