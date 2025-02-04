@@ -20,6 +20,27 @@ class BinaryConfig:
         if self.flags is None:
             self.flags = []
 
+    def build_command(self,
+                      input_file: str,
+                      output_file: Optional[str] = None) -> List[str]:
+        """Build command for execution.
+
+        Args:
+            input_file: Input file path
+            output_file: Optional output file path
+
+        Returns:
+            List of command parts
+        """
+        command = [self.path]
+        for flag in self.flags:
+            if '{input_file}' in flag:
+                flag = flag.replace('{input_file}', input_file)
+            if output_file is not None and '{output_file}' in flag:
+                flag = flag.replace('{output_file}', output_file)
+            command.append(flag)
+        return command
+
 
 @dataclass
 class DirectoryConfig:
@@ -34,7 +55,8 @@ class DirectoryConfig:
             raise ValueError("Input file list cannot be empty")
         if not os.path.isfile(self.input_file_list):
             raise FileNotFoundError(
-                f"Input file list not found: {self.input_file_list}")
+                f"Input file list not found: {self.input_file_list}"
+            )
         if not self.output_dir:
             raise ValueError("Output directory cannot be empty")
         if not os.path.exists(self.output_dir):
@@ -89,7 +111,8 @@ class Config:
             self.binary = binary
         else:
             raise TypeError(
-                "Binary configuration must be a dict or BinaryConfig")
+                "Binary configuration must be a dict or BinaryConfig"
+            )
 
         # Handle directory config
         directories = kwargs.get('directories', {})
@@ -99,7 +122,8 @@ class Config:
             self.directories = directories
         else:
             raise TypeError(
-                "Directory configuration must be a dict or DirectoryConfig")
+                "Directory configuration must be a dict or DirectoryConfig"
+            )
 
         # Handle resource config
         resources = kwargs.get('resources', {})

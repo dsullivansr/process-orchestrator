@@ -9,6 +9,7 @@ from typing import List
 
 from orchestrator.config import Config, BinaryConfig, DirectoryConfig
 from orchestrator.process_manager import ProcessManager
+from orchestrator.resource_calibration import NoopCalibrator
 
 
 class TestJobConfig(unittest.TestCase):
@@ -70,14 +71,14 @@ class TestJobConfig(unittest.TestCase):
         return True
 
     def _create_process_manager(
-        self, output_dir=None, output_suffix=None, skip_calibration=True
+        self, output_dir=None, output_suffix=None, calibrator=None
     ):
         """Create a process manager instance.
 
         Args:
             output_dir: Optional output directory path. If None, uses self.output_dir
             output_suffix: Optional output suffix. If None, no suffix is used
-            skip_calibration: Whether to skip resource calibration
+            calibrator: Optional calibrator to use. If None, uses NoopCalibrator
         """
         config = Config(
             binary=BinaryConfig(
@@ -89,7 +90,7 @@ class TestJobConfig(unittest.TestCase):
                 output_suffix=output_suffix
             )
         )
-        return ProcessManager(config, skip_calibration=skip_calibration)
+        return ProcessManager(config, calibrator=calibrator or NoopCalibrator())
 
     def test_file_copy_job(self):
         """Test file copy job configuration."""

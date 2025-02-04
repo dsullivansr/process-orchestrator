@@ -12,7 +12,8 @@ from orchestrator.process_manager import ProcessManager
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 
@@ -23,32 +24,41 @@ def parse_args() -> argparse.Namespace:
         Parsed arguments
     """
     parser = argparse.ArgumentParser(description='Process files.')
-    parser.add_argument('--config',
-                        required=True,
-                        help='Path to configuration file')
-    parser.add_argument('--input-file-list',
-                        required=True,
-                        help='Path to file containing list of input files')
-    parser.add_argument('--output-dir',
-                        required=True,
-                        help='Path to output directory')
+    parser.add_argument(
+        '--config', required=True, help='Path to configuration file'
+    )
+    parser.add_argument(
+        '--input-file-list',
+        required=True,
+        help='Path to file containing list of input files'
+    )
+    parser.add_argument(
+        '--output-dir', required=True, help='Path to output directory'
+    )
     parser.add_argument(
         '--log-level',
         choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
         default='INFO',
-        help='Set the logging level')
-    parser.add_argument('--max-cpu-percent',
-                        type=float,
-                        default=80.0,
-                        help='Maximum CPU usage percentage')
-    parser.add_argument('--max-memory-percent',
-                        type=float,
-                        default=80.0,
-                        help='Maximum memory usage percentage')
-    parser.add_argument('--max-processes',
-                        type=int,
-                        default=4,
-                        help='Maximum number of concurrent processes')
+        help='Set the logging level'
+    )
+    parser.add_argument(
+        '--max-cpu-percent',
+        type=float,
+        default=80.0,
+        help='Maximum CPU usage percentage'
+    )
+    parser.add_argument(
+        '--max-memory-percent',
+        type=float,
+        default=80.0,
+        help='Maximum memory usage percentage'
+    )
+    parser.add_argument(
+        '--max-processes',
+        type=int,
+        default=4,
+        help='Maximum number of concurrent processes'
+    )
     return parser.parse_args()
 
 
@@ -66,7 +76,8 @@ def validate_paths(args: argparse.Namespace) -> None:
 
     if not os.path.isfile(args.input_file_list):
         raise FileNotFoundError(
-            f"Input file list not found: {args.input_file_list}")
+            f"Input file list not found: {args.input_file_list}"
+        )
 
     # Create output directory if it doesn't exist
     os.makedirs(args.output_dir, exist_ok=True)
@@ -86,7 +97,8 @@ def main() -> int:
         # Configure logging
         logging.basicConfig(
             level=getattr(logging, args.log_level),
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
 
         # Load base configuration
         config = Config.from_yaml(args.config)

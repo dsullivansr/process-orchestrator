@@ -9,6 +9,7 @@ import pytest
 
 from orchestrator.config import Config
 from orchestrator.process_manager import ProcessManager
+from orchestrator.resource_calibration import NoopCalibrator
 
 
 class TestProcessManager(unittest.TestCase):
@@ -38,13 +39,18 @@ class TestProcessManager(unittest.TestCase):
         self.manager = self._create_process_manager()
 
     def _create_process_manager(
-        self, input_list_file=None, output_dir=None, skip_calibration=True
+        self,
+        input_list_file=None,
+        output_dir=None,
+        calibrator=None,
+        skip_calibration=False
     ):
         """Create a process manager instance.
 
         Args:
             input_list_file: Optional input list file path. If None, uses self.input_list_file
             output_dir: Optional output directory path. If None, uses self.output_dir
+            calibrator: Optional calibrator to use. If None, uses NoopCalibrator
             skip_calibration: Whether to skip resource calibration
         """
         config = Config(
@@ -58,7 +64,11 @@ class TestProcessManager(unittest.TestCase):
                 'output_suffix': '.processed'
             }
         )
-        return ProcessManager(config, skip_calibration=skip_calibration)
+        return ProcessManager(
+            config,
+            calibrator=calibrator or NoopCalibrator(),
+            skip_calibration=skip_calibration
+        )
 
     def test_command_building(self):
         """Test building command with templates."""
@@ -95,8 +105,7 @@ class TestProcessManager(unittest.TestCase):
 
     def test_start_process_nonexistent_file(self):
         """Test starting a process with non-existent file."""
-        # Create manager with calibration skipped
-        manager = self._create_process_manager(skip_calibration=True)
+        manager = self._create_process_manager()
         with self.assertRaises(FileNotFoundError):
             manager.start_process('/nonexistent/file.txt')
 

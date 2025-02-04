@@ -21,16 +21,18 @@ class TestOrchestrator(unittest.TestCase):
             f.write('/path/to/test2.txt\n')
 
         binary = BinaryConfig(path="/bin/echo", flags=["-n"])
-        directories = DirectoryConfig(input_file_list=self.input_list_file,
-                                      output_dir=self.output_dir)
+        directories = DirectoryConfig(
+            input_file_list=self.input_list_file, output_dir=self.output_dir
+        )
         self.config = Config(binary=binary, directories=directories)
 
     def test_initialization(self):
         """Test that the orchestrator initializes correctly."""
         self.assertIsNotNone(self.config)
         self.assertEqual(self.config.binary.path, "/bin/echo")
-        self.assertEqual(self.config.directories.input_file_list,
-                         self.input_list_file)
+        self.assertEqual(
+            self.config.directories.input_file_list, self.input_list_file
+        )
         self.assertEqual(self.config.directories.output_dir, self.output_dir)
 
 

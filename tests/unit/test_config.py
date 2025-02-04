@@ -25,7 +25,8 @@ class TestConfig(unittest.TestCase):
         """Test loading configuration from YAML file."""
         config_path = os.path.join(self.test_dir, 'config.yaml')
         with open(config_path, 'w', encoding='utf-8') as f:
-            f.write(f'''
+            f.write(
+                f'''
 binary:
   path: /bin/cp
   flags:
@@ -35,13 +36,15 @@ directories:
   input_file_list: {self.input_list_file}
   output_dir: {self.output_dir}
   output_suffix: _processed
-''')
+'''
+            )
 
         config = Config.from_yaml(config_path)
         self.assertEqual(config.binary.path, '/bin/cp')
         self.assertEqual(config.binary.flags, ['{input_file}', '{output_file}'])
-        self.assertEqual(config.directories.input_file_list,
-                         self.input_list_file)
+        self.assertEqual(
+            config.directories.input_file_list, self.input_list_file
+        )
         self.assertEqual(config.directories.output_dir, self.output_dir)
         self.assertEqual(config.directories.output_suffix, '_processed')
 
@@ -52,20 +55,23 @@ directories:
 
     def test_load_config_with_kwargs(self):
         """Test loading configuration with keyword arguments."""
-        config = Config(binary={
-            'path': '/bin/cp',
-            'flags': ['{input_file}', '{output_file}']
-        },
-                        directories={
-                            'input_file_list': self.input_list_file,
-                            'output_dir': self.output_dir,
-                            'output_suffix': '_processed'
-                        })
+        config = Config(
+            binary={
+                'path': '/bin/cp',
+                'flags': ['{input_file}', '{output_file}']
+            },
+            directories={
+                'input_file_list': self.input_list_file,
+                'output_dir': self.output_dir,
+                'output_suffix': '_processed'
+            }
+        )
 
         self.assertEqual(config.binary.path, '/bin/cp')
         self.assertEqual(config.binary.flags, ['{input_file}', '{output_file}'])
-        self.assertEqual(config.directories.input_file_list,
-                         self.input_list_file)
+        self.assertEqual(
+            config.directories.input_file_list, self.input_list_file
+        )
         self.assertEqual(config.directories.output_dir, self.output_dir)
         self.assertEqual(config.directories.output_suffix, '_processed')
 

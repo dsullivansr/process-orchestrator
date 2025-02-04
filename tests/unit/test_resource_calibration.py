@@ -8,20 +8,21 @@ from unittest.mock import MagicMock, patch
 
 from orchestrator.config import Config
 from orchestrator.process_manager import ProcessManager
+from orchestrator.resource_calibration import ResourceCalibrator, NoopCalibrator, ProcessCalibrator
 
 
 class TestResourceCalibration(unittest.TestCase):
     """Test resource calibration functionality."""
 
     def _create_process_manager(
-        self, input_list_file=None, output_dir=None, skip_calibration=False
+        self, input_list_file=None, output_dir=None, calibrator=None
     ):
         """Create a process manager instance.
 
         Args:
             input_list_file: Optional input list file path. If None, uses self.input_list_file
             output_dir: Optional output directory path. If None, uses self.output_dir
-            skip_calibration: Whether to skip resource calibration
+            calibrator: Optional resource calibrator. If None, uses NoopCalibrator.
         """
         config = Config(
             binary={
@@ -34,7 +35,7 @@ class TestResourceCalibration(unittest.TestCase):
                 'output_suffix': '.out'
             }
         )
-        return ProcessManager(config, skip_calibration=skip_calibration)
+        return ProcessManager(config, calibrator=calibrator)
 
     def setUp(self):
         """Set up test fixtures."""
@@ -59,210 +60,325 @@ class TestResourceCalibration(unittest.TestCase):
         """Clean up test fixtures."""
         shutil.rmtree(self.test_dir)
 
-    @patch('psutil.Process')
-    @patch('psutil.cpu_count')
-    @patch('psutil.virtual_memory')
-    @patch('psutil.disk_usage')
-    def test_calibration_normal_case(
-        self, mock_disk_usage, mock_virtual_memory, mock_cpu_count, mock_process
-    ):
+    def test_interface_enforcement(self):
+        """Test that ResourceCalibrator interface is enforced."""
+        # Create a valid config for testing
+        config = Config(
+            binary={
+                'path': '/bin/cat',
+                'flags': ['{input_file}']
+            },
+            directories={
+                'input_file_list': self.input_list_file,
+                'output_dir': self.output_dir,
+                'output_suffix': '.out'
+            }
+        )
+
+        # Verify that ResourceCalibrator is an abstract class
+        self.assertTrue(hasattr(ResourceCalibrator, '__abstractmethods__'))
+        self.assertIn('calibrate', ResourceCalibrator.__abstractmethods__)
+
+        # Define an incomplete calibrator class
+        class IncompleteCalibrator(ResourceCalibrator):
+
+            def __init__(self):
+                pass
+
+        # Verify incomplete class is still abstract
+        self.assertTrue(hasattr(IncompleteCalibrator, '__abstractmethods__'))
+        self.assertIn('calibrate', IncompleteCalibrator.__abstractmethods__)
+
+        # Verify that implementing abstract method allows instantiation
+        class ValidCalibrator(ResourceCalibrator):
+
+            def __init__(self, config):
+                self.config = config
+
+            def calibrate(self, test_file):
+                return None
+
+        calibrator = ValidCalibrator(config)
+        self.assertIsNotNone(calibrator)
+
+    def test_noop_calibrator(self):
+        """Test NoopCalibrator behavior."""
+        calibrator = NoopCalibrator()
+        # NoopCalibrator always returns None
+        self.assertIsNone(calibrator.calibrate('test.txt'))
+
+    def test_calibration_normal_case(self):
         """Test resource calibration under normal conditions."""
-        # Mock system resource info
-        mock_cpu_count.return_value = 8
-        mock_virtual_memory.return_value.total = 16 * 1024 * 1024 * 1024  # 16GB
-        mock_disk_usage.return_value.free = 100 * 1024 * 1024 * 1024  # 100GB
+        with patch('psutil.Process') as mock_process, \
+             patch('psutil.cpu_count') as mock_cpu_count, \
+             patch('psutil.virtual_memory') as mock_virtual_memory, \
+             patch('psutil.disk_usage') as mock_disk_usage:
+            # Mock system resource info
+            mock_cpu_count.return_value = 8
+            mock_virtual_memory.return_value.total = 16 * 1024 * 1024 * 1024  # 16GB
+            mock_disk_usage.return_value.free = 100 * 1024 * 1024 * 1024  # 100GB
 
-        # Mock process resource usage
-        mock_process_instance = MagicMock()
-        # Simulate stable CPU usage
-        # Provide enough CPU values for all calls:
-        # - Initial stabilization check (up to 10 attempts)
-        # - Final measurement with interval
-        # - Any additional checks
-        mock_process_instance.cpu_percent.side_effect = [
-            50.0,
-            50.5,
-            50.2,
-            50.3,
-            50.1,  # Initial values
-            50.2,
-            50.3,
-            50.1,
-            50.2,
-            50.3,  # More initial values
-            50.1,
-            50.2,
-            50.3,
-            50.1,
-            50.2,  # Final measurement
-            50.1,
-            50.2,
-            50.3,
-            50.1,
-            50.2  # Extra values just in case
-        ]
-        mock_process_instance.memory_info.return_value.rss = 1024 * 1024 * 1024  # 1GB
-        mock_process.return_value = mock_process_instance
+            # Mock process resource usage
+            mock_process_instance = MagicMock()
+            # Simulate stable CPU usage
+            # Provide enough CPU values for all calls:
+            # - Initial stabilization check (up to 10 attempts)
+            # - Final measurement with interval
+            # - Any additional checks
+            mock_process_instance.cpu_percent.side_effect = [
+                50.0,
+                50.5,
+                50.2,
+                50.3,
+                50.1,  # Initial values
+                50.2,
+                50.3,
+                50.1,
+                50.2,
+                50.3,  # More initial values
+                50.1,
+                50.2,
+                50.3,
+                50.1,
+                50.2,  # Final measurement
+                50.1,
+                50.2,
+                50.3,
+                50.1,
+                50.2  # Extra values just in case
+            ]
+            mock_process_instance.memory_info.return_value.rss = 1024 * 1024 * 1024  # 1GB
+            mock_process.return_value = mock_process_instance
 
-        # Create process manager and verify thresholds
-        manager = self._create_process_manager()
+            # Create calibrator and verify thresholds
+            config = Config(
+                binary={
+                    'path': '/bin/cat',  # Use cat for testing
+                    'flags': ['{input_file}']
+                },
+                directories={
+                    'input_file_list': self.input_list_file,
+                    'output_dir': self.output_dir,
+                    'output_suffix': '.out'
+                }
+            )
+            calibrator = ProcessCalibrator(config)
+            thresholds = calibrator.calibrate(self.test_file)
 
-        # Verify the calculated thresholds
-        self.assertEqual(
-            manager.resource_monitor.thresholds['cpu_percent'], 80.0
-        )
-        self.assertEqual(
-            manager.resource_monitor.thresholds['memory_percent'], 80.0
-        )
-        self.assertEqual(
-            manager.resource_monitor.thresholds['disk_percent'], 80.0
-        )
-        self.assertEqual(
-            manager.resource_monitor.thresholds['max_processes'], 6
-        )  # 8 cores * 0.8 = 6
+            # Verify the calculated thresholds
+            self.assertIsNotNone(thresholds)
+            self.assertAlmostEqual(
+                thresholds['cpu_percent'], 60.0, places=0
+            )  # 50% * 1.2
+            memory_percent = (1024 * 1024 * 1024) / (
+                16 * 1024 * 1024 * 1024
+            ) * 100 * 1.2  # 1GB/16GB * 100 * 1.2
+            self.assertAlmostEqual(thresholds['memory_percent'], memory_percent)
+            disk_percent = len('Test content'
+                               ) / (100 * 1024 * 1024 * 1024) * 100 * 1.2
+            self.assertAlmostEqual(thresholds['disk_percent'], disk_percent)
+            self.assertEqual(
+                thresholds['max_processes'], 6
+            )  # min(6, 12, 7812500000)
 
-    @patch('psutil.Process')
-    @patch('psutil.cpu_count')
-    @patch('psutil.virtual_memory')
-    @patch('psutil.disk_usage')
-    def test_calibration_memory_constrained(
-        self, mock_disk_usage, mock_virtual_memory, mock_cpu_count, mock_process
-    ):
+    def test_calibration_memory_constrained(self):
         """Test resource calibration when memory is the constraining factor."""
-        # Mock system resource info
-        mock_cpu_count.return_value = 32
-        mock_virtual_memory.return_value.total = 8 * 1024 * 1024 * 1024  # 8GB
-        mock_disk_usage.return_value.free = 100 * 1024 * 1024 * 1024  # 100GB
+        with patch('psutil.Process') as mock_process, \
+             patch('psutil.cpu_count') as mock_cpu_count, \
+             patch('psutil.virtual_memory') as mock_virtual_memory, \
+             patch('psutil.disk_usage') as mock_disk_usage:
+            # Mock system resource info
+            mock_cpu_count.return_value = 32
+            mock_virtual_memory.return_value.total = 8 * 1024 * 1024 * 1024  # 8GB
+            mock_disk_usage.return_value.free = 100 * 1024 * 1024 * 1024  # 100GB
 
-        # Mock process resource usage
-        mock_process_instance = MagicMock()
-        # Simulate stable CPU usage
-        # Provide enough CPU values for all calls:
-        # - Initial stabilization check (up to 10 attempts)
-        # - Final measurement with interval
-        # - Any additional checks
-        mock_process_instance.cpu_percent.side_effect = [
-            50.0,
-            50.5,
-            50.2,
-            50.3,
-            50.1,  # Initial values
-            50.2,
-            50.3,
-            50.1,
-            50.2,
-            50.3,  # More initial values
-            50.1,
-            50.2,
-            50.3,
-            50.1,
-            50.2,  # Final measurement
-            50.1,
-            50.2,
-            50.3,
-            50.1,
-            50.2  # Extra values just in case
-        ]
-        mock_process_instance.memory_info.return_value.rss = 1024 * 1024 * 1024  # 1GB
-        mock_process.return_value = mock_process_instance
+            # Mock process resource usage
+            mock_process_instance = MagicMock()
+            # Simulate stable CPU usage
+            # Provide enough CPU values for all calls:
+            # - Initial stabilization check (up to 10 attempts)
+            # - Final measurement with interval
+            # - Any additional checks
+            mock_process_instance.cpu_percent.side_effect = [
+                50.0,
+                50.5,
+                50.2,
+                50.3,
+                50.1,  # Initial values
+                50.2,
+                50.3,
+                50.1,
+                50.2,
+                50.3,  # More initial values
+                50.1,
+                50.2,
+                50.3,
+                50.1,
+                50.2,  # Final measurement
+                50.1,
+                50.2,
+                50.3,
+                50.1,
+                50.2  # Extra values just in case
+            ]
+            mock_process_instance.memory_info.return_value.rss = 1024 * 1024 * 1024  # 1GB
+            mock_process.return_value = mock_process_instance
 
-        # Create process manager and verify memory limits
-        manager = self._create_process_manager()
+            # Create calibrator and verify thresholds
+            config = Config(
+                binary={
+                    'path': '/bin/cat',  # Use cat for testing
+                    'flags': ['{input_file}']
+                },
+                directories={
+                    'input_file_list': self.input_list_file,
+                    'output_dir': self.output_dir,
+                    'output_suffix': '.out'
+                }
+            )
+            calibrator = ProcessCalibrator(config)
+            thresholds = calibrator.calibrate(self.test_file)
 
-        # Memory should be the limiting factor: 8GB * 0.8 / 1GB = 6 processes
-        self.assertEqual(
-            manager.resource_monitor.thresholds['max_processes'], 6
-        )
+            # Verify the calculated thresholds
+            self.assertIsNotNone(thresholds)
+            self.assertAlmostEqual(
+                thresholds['cpu_percent'], 60.0, places=0
+            )  # 50% * 1.2
+            memory_percent = (1024 * 1024 * 1024) / (
+                8 * 1024 * 1024 * 1024
+            ) * 100 * 1.2  # 1GB/8GB * 100 * 1.2
+            self.assertAlmostEqual(thresholds['memory_percent'], memory_percent)
+            disk_percent = len('Test content'
+                               ) / (100 * 1024 * 1024 * 1024) * 100 * 1.2
+            self.assertAlmostEqual(thresholds['disk_percent'], disk_percent)
+            self.assertEqual(
+                thresholds['max_processes'], 6
+            )  # min(25, 6, 7812500000)
 
-    @patch('psutil.Process')
-    @patch('psutil.cpu_count')
-    @patch('psutil.virtual_memory')
-    @patch('psutil.disk_usage')
-    def test_calibration_disk_constrained(
-        self, mock_disk_usage, mock_virtual_memory, mock_cpu_count, mock_process
-    ):
+    def test_calibration_disk_constrained(self):
         """Test resource calibration when disk space is the constraining factor."""
-        # Mock system resource info
-        mock_cpu_count.return_value = 32
-        mock_virtual_memory.return_value.total = 64 * 1024 * 1024 * 1024  # 64GB
-        mock_disk_usage.return_value.free = 5 * 1024 * 1024 * 1024  # 5GB
+        with patch('psutil.Process') as mock_process, \
+             patch('psutil.cpu_count') as mock_cpu_count, \
+             patch('psutil.virtual_memory') as mock_virtual_memory, \
+             patch('psutil.disk_usage') as mock_disk_usage:
+            # Mock system resource info
+            mock_cpu_count.return_value = 32
+            mock_virtual_memory.return_value.total = 64 * 1024 * 1024 * 1024  # 64GB
+            mock_disk_usage.return_value.free = 5 * 1024 * 1024 * 1024  # 5GB
 
-        # Mock process resource usage
-        mock_process_instance = MagicMock()
-        # Simulate stable CPU usage
-        # Provide enough CPU values for all calls:
-        # - Initial stabilization check (up to 10 attempts)
-        # - Final measurement with interval
-        # - Any additional checks
-        mock_process_instance.cpu_percent.side_effect = [
-            50.0,
-            50.5,
-            50.2,
-            50.3,
-            50.1,  # Initial values
-            50.2,
-            50.3,
-            50.1,
-            50.2,
-            50.3,  # More initial values
-            50.1,
-            50.2,
-            50.3,
-            50.1,
-            50.2,  # Final measurement
-            50.1,
-            50.2,
-            50.3,
-            50.1,
-            50.2  # Extra values just in case
-        ]
-        mock_process_instance.memory_info.return_value.rss = 512 * 1024 * 1024  # 512MB
-        mock_process.return_value = mock_process_instance
+            # Mock process resource usage
+            mock_process_instance = MagicMock()
+            # Simulate stable CPU usage
+            # Provide enough CPU values for all calls:
+            # - Initial stabilization check (up to 10 attempts)
+            # - Final measurement with interval
+            # - Any additional checks
+            mock_process_instance.cpu_percent.side_effect = [
+                50.0,
+                50.5,
+                50.2,
+                50.3,
+                50.1,  # Initial values
+                50.2,
+                50.3,
+                50.1,
+                50.2,
+                50.3,  # More initial values
+                50.1,
+                50.2,
+                50.3,
+                50.1,
+                50.2,  # Final measurement
+                50.1,
+                50.2,
+                50.3,
+                50.1,
+                50.2  # Extra values just in case
+            ]
+            mock_process_instance.memory_info.return_value.rss = 512 * 1024 * 1024  # 512MB
+            mock_process.return_value = mock_process_instance
 
-        # Create a 1GB test file
-        with open(self.test_file, 'wb') as f:
-            f.write(b'0' * (1024 * 1024 * 1024))
+            # Create a 1GB test file
+            with open(self.test_file, 'wb') as f:
+                f.write(b'0' * (1024 * 1024 * 1024))
 
-        # Create process manager and verify disk limits
-        manager = self._create_process_manager()
+            # Create calibrator and verify thresholds
+            config = Config(
+                binary={
+                    'path': '/bin/cat',  # Use cat for testing
+                    'flags': ['{input_file}']
+                },
+                directories={
+                    'input_file_list': self.input_list_file,
+                    'output_dir': self.output_dir,
+                    'output_suffix': '.out'
+                }
+            )
+            calibrator = ProcessCalibrator(config)
+            thresholds = calibrator.calibrate(self.test_file)
 
-        # Disk should be the limiting factor: 5GB * 0.8 / (1GB * 2) = 2 processes
-        self.assertEqual(
-            manager.resource_monitor.thresholds['max_processes'], 2
-        )
+            # Verify the calculated thresholds
+            self.assertIsNotNone(thresholds)
+            self.assertAlmostEqual(
+                thresholds['cpu_percent'], 60.0, places=0
+            )  # 50% * 1.2
+            memory_percent = (512 * 1024 * 1024) / (
+                64 * 1024 * 1024 * 1024
+            ) * 100 * 1.2  # 512MB/64GB * 100 * 1.2
+            self.assertAlmostEqual(thresholds['memory_percent'], memory_percent)
+            disk_percent = (1024 * 1024 * 1024) / (
+                5 * 1024 * 1024 * 1024
+            ) * 100 * 1.2  # 1GB/5GB * 100 * 1.2
+            self.assertAlmostEqual(thresholds['disk_percent'], disk_percent)
+            self.assertEqual(thresholds['max_processes'], 4)  # min(25, 102, 4)
 
-    @patch('psutil.Process')
-    @patch('psutil.cpu_count')
-    @patch('psutil.virtual_memory')
-    @patch('psutil.disk_usage')
-    def test_calibration_edge_cases(
-        self, mock_disk_usage, mock_virtual_memory, mock_cpu_count, mock_process
-    ):
+    def test_calibration_edge_cases(self):
         """Test resource calibration edge cases."""
-        # Mock system resource info with edge case values
-        mock_cpu_count.return_value = None  # CPU count not available
-        mock_virtual_memory.return_value.total = 1024  # Very small memory
-        mock_disk_usage.return_value.free = 1024  # Very small disk space
+        with patch('psutil.Process') as mock_process, \
+             patch('psutil.cpu_count') as mock_cpu_count, \
+             patch('psutil.virtual_memory') as mock_virtual_memory, \
+             patch('psutil.disk_usage') as mock_disk_usage:
+            # Mock system resource info with edge case values
+            mock_cpu_count.return_value = None  # CPU count not available
+            mock_virtual_memory.return_value.total = 1024  # Very small memory
+            mock_disk_usage.return_value.free = 1024  # Very small disk space
 
-        # Mock process with zero resource usage
-        mock_process_instance = MagicMock()
-        # Simulate stable CPU usage at zero
-        mock_process_instance.cpu_percent.side_effect = [
-            0.0, 0.1, 0.0, 0.1, 0.0
-        ]
-        mock_process_instance.memory_info.return_value.rss = 0
-        mock_process.return_value = mock_process_instance
+            # Mock process with zero resource usage
+            mock_process_instance = MagicMock()
+            # Simulate stable CPU usage at zero
+            mock_process_instance.cpu_percent.side_effect = [
+                0.0, 0.1, 0.0, 0.1, 0.0
+            ]
+            mock_process_instance.memory_info.return_value.rss = 1024  # 1KB
+            mock_process.return_value = mock_process_instance
 
-        # Create process manager and verify safe defaults
-        manager = self._create_process_manager()
+            # Create calibrator and verify thresholds
+            config = Config(
+                binary={
+                    'path': '/bin/cat',  # Use cat for testing
+                    'flags': ['{input_file}']
+                },
+                directories={
+                    'input_file_list': self.input_list_file,
+                    'output_dir': self.output_dir,
+                    'output_suffix': '.out'
+                }
+            )
+            calibrator = ProcessCalibrator(config)
+            thresholds = calibrator.calibrate(self.test_file)
 
-        # Should default to safe values
-        self.assertGreater(
-            manager.resource_monitor.thresholds['max_processes'], 0
-        )
-        self.assertLessEqual(
-            manager.resource_monitor.thresholds['max_processes'], 1
-        )
+            # Verify the calculated thresholds use safe defaults
+            self.assertIsNotNone(thresholds)
+            self.assertEqual(
+                thresholds['cpu_percent'], 1.2
+            )  # 0% * 1.2 with minimum of 1%
+            memory_percent = (1024 / 1024) * 100 * 1.2  # 1KB/1KB * 100 * 1.2
+            self.assertAlmostEqual(thresholds['memory_percent'], memory_percent)
+            disk_percent = len(
+                'Test content'
+            ) / 1024 * 100 * 1.2  # test content size/1KB * 100 * 1.2
+            self.assertAlmostEqual(thresholds['disk_percent'], disk_percent)
+            self.assertEqual(thresholds['max_processes'], 1)  # min(1, 1024, 78)
 
     def test_calibration_no_input_files(self):
         """Test resource calibration when no input files exist."""
@@ -271,11 +387,18 @@ class TestResourceCalibration(unittest.TestCase):
         with open(empty_list_file, 'w', encoding='utf-8') as f:
             f.write('')
 
-        # Create process manager with empty list
-        manager = self._create_process_manager(input_list_file=empty_list_file)
-
-        # Should use default values from config
-        self.assertEqual(
-            manager.resource_monitor.thresholds['max_processes'],
-            manager.config.resources.max_processes
+        # Create calibrator and verify it returns None for no input files
+        config = Config(
+            binary={
+                'path': '/bin/cat',  # Use cat for testing
+                'flags': ['{input_file}']
+            },
+            directories={
+                'input_file_list': empty_list_file,
+                'output_dir': self.output_dir,
+                'output_suffix': '.out'
+            }
         )
+        calibrator = ProcessCalibrator(config)
+        thresholds = calibrator.calibrate(None)
+        self.assertIsNone(thresholds)

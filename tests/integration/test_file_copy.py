@@ -11,24 +11,27 @@ from typing import List
 
 from orchestrator.config import Config, BinaryConfig, DirectoryConfig
 from orchestrator.process_manager import ProcessManager
+from orchestrator.resource_calibration import NoopCalibrator, ProcessCalibrator
 
 
 class TestFileCopy(unittest.TestCase):
     """Test file copying functionality."""
 
     def _create_process_manager(
-        self, input_list_file=None, output_dir=None, skip_calibration=None
+        self,
+        input_list_file=None,
+        output_dir=None,
+        calibrator=None,
+        skip_calibration=False
     ):
         """Create a process manager instance.
 
         Args:
             input_list_file: Optional input list file path. If None, uses self.input_list_file
             output_dir: Optional output directory path. If None, uses self.output_dir
-            skip_calibration: Whether to skip resource calibration. If None, skips for all tests except test_large_file
+            calibrator: Optional calibrator to use. If None, uses NoopCalibrator for all tests except test_large_file
+            skip_calibration: Whether to skip resource calibration
         """
-        if skip_calibration is None:
-            skip_calibration = self._testMethodName != 'test_large_file'
-
         config = Config(
             binary=BinaryConfig(
                 path='/bin/cp', flags=['{input_file}', '{output_file}']
@@ -39,7 +42,15 @@ class TestFileCopy(unittest.TestCase):
                 output_suffix='.bak'
             )
         )
-        return ProcessManager(config, skip_calibration=skip_calibration)
+
+        if calibrator is None:
+            calibrator = ProcessCalibrator(
+                config
+            ) if self._testMethodName == 'test_large_file' else NoopCalibrator()
+
+        return ProcessManager(
+            config, calibrator=calibrator, skip_calibration=skip_calibration
+        )
 
     def setUp(self):
         """Set up test fixtures."""
