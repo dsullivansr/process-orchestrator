@@ -44,3 +44,10 @@ repos:
                 "--rcfile=.pylintrc",
                 "--score=no"
             ]
+
+    -   id: cleanup-coverage
+        name: cleanup coverage files
+        entry: rm -f .coverage
+        language: system
+        pass_filenames: false
+        always_run: true

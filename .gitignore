@@ -20,3 +20,8 @@ build/
 
 # Local environment variables
 .env
+
+# Coverage files
+.coverage
+.coverage.*
+htmlcov/
