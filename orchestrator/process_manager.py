@@ -3,7 +3,7 @@
 import logging
 import os
 import subprocess
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import psutil
 
@@ -61,14 +61,14 @@ class ProcessManager:
             output_dir=self.config.directories.output_dir
         )
 
-    def build_command(self, input_file: str) -> List[str]:
-        """Build command for processing a file.
+    def build_command(self, input_file: str) -> Tuple[object, bool]:
+        """Build command for processing a file with proper substitution and shell redirection handling.
 
         Args:
             input_file: Input file path
 
         Returns:
-            Command list
+            A tuple of (command, use_shell) where command is either a list or a string, and use_shell indicates whether shell=True should be used.
         """
         # Get output path with suffix
         output_file = os.path.join(
@@ -76,16 +76,21 @@ class ProcessManager:
             os.path.basename(input_file) + self.config.directories.output_suffix
         )
 
-        # Build command with direct string substitution
-        cmd = [self.config.binary.path]
-        for flag in self.config.binary.flags:
-            formatted_flag = flag.format(
-                input_file=input_file, output_file=output_file
-            )
-            cmd.append(formatted_flag)
+        # Format flags with substitution
+        formatted_flags = [
+            flag.format(input_file=input_file, output_file=output_file)
+            for flag in self.config.binary.flags
+        ]
 
-        logger.info("Built command: %s", ' '.join(cmd))
-        return cmd
+        # Check if any flag contains shell operators that require shell interpretation
+        if any(op in formatted_flags for op in [">", ">>", "|", "<"]):
+            # Build a command string for shell execution
+            cmd_str = self.config.binary.path + " " + " ".join(formatted_flags)
+            logger.info("Built shell command: %s", cmd_str)
+            return cmd_str, True
+        cmd_list = [self.config.binary.path] + formatted_flags
+        logger.info("Built command: %s", ' '.join(cmd_list))
+        return cmd_list, False
 
     def _get_input_files(self) -> List[str]:
         """Get list of input files.
@@ -123,16 +128,18 @@ class ProcessManager:
         if not os.path.isfile(input_file):
             raise FileNotFoundError(f"Input file not found: {input_file}")
 
-        # Build command
-        cmd = self.build_command(input_file)
+        # Build command and determine if shell should be used
+        cmd, use_shell = self.build_command(input_file)
 
         # Create output directory if it doesn't exist
-        output_dir = os.path.dirname(cmd[-1])
+        output_dir = os.path.dirname(cmd[-1] if isinstance(cmd, list) else cmd)
         os.makedirs(output_dir, exist_ok=True)
 
         # Start process
         logger.info("Starting process for file: %s", input_file)
-        logger.info("Command: %s", ' '.join(cmd))
+        logger.info(
+            "Command: %s", ' '.join(cmd) if isinstance(cmd, list) else cmd
+        )
 
         try:
             # pylint: disable=consider-using-with
@@ -142,7 +149,8 @@ class ProcessManager:
                 stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1,
-                close_fds=True
+                close_fds=True,
+                shell=use_shell
             )
             self.processes[input_file] = process
             self.resource_monitor.add_process(

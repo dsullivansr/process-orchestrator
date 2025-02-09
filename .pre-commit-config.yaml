@@ -1,51 +1,57 @@
 repos:
--   repo: https://github.com/pre-commit/pre-commit-hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0
     hooks:
-    -   id: trailing-whitespace
-    -   id: end-of-file-fixer
-    -   id: check-yaml
-    -   id: check-added-large-files
-    -   id: check-ast
-    -   id: check-json
-    -   id: check-merge-conflict
-    -   id: detect-private-key
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+      - id: check-ast
+      - id: check-json
+      - id: check-merge-conflict
+      - id: detect-private-key
 
--   repo: https://github.com/google/yapf
+  - repo: https://github.com/google/yapf
     rev: v0.40.2
     hooks:
-    -   id: yapf
+      - id: yapf
         name: yapf
         description: Format Python code according to Google style
         entry: yapf
         language: python
         types: [python]
-        args: [--style=.style.yapf, --parallel, --in-place, --verbose]
+        args: ["--style=.style.yapf", "--parallel", "--in-place", "--verbose"]
         additional_dependencies: [toml]
 
--   repo: local
+  - repo: "local"
     hooks:
-    -   id: pytest
+      - id: pytest
         name: pytest
         entry: pytest
-        language: system
+        language: python
+        language_version: python3
+        additional_dependencies: ["pytest>=7.4.0", "pytest-cov", "pyyaml", "psutil"]
+        env:
+          PYTHONPATH: "."
         types: [python]
         pass_filenames: false
-        always_run: true
-        args: ["-v", "--full-trace"]
 
-    -   id: pylint
+  - repo: "local"
+    hooks:
+      - id: pylint
         name: pylint
         entry: pylint
-        language: system
+        language: python
+        language_version: python3
+        additional_dependencies: ["pylint>=3.0.0", "psutil", "PyYAML", "setuptools", "pytest>=7.4.0"]
+        env:
+          PYTHONPATH: "."
         types: [python]
-        args:
-            [
-                "--rcfile=.pylintrc",
-                "--score=no"
-            ]
+        args: ["--rcfile=.pylintrc", "--score=no"]
 
-    -   id: cleanup-coverage
+  - repo: "local"
+    hooks:
+      - id: cleanup-coverage
         name: cleanup coverage files
         entry: rm -f .coverage
         language: system

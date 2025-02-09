@@ -73,12 +73,13 @@ class TestProcessManager(unittest.TestCase):
     def test_command_building(self):
         """Test building command with templates."""
         input_file = self.test_files[0]
-        command = self.manager.build_command(input_file)
+        command, use_shell = self.manager.build_command(input_file)
         expected = [
             '/usr/bin/test', f'--input={input_file}',
             f'--output={os.path.join(self.output_dir, os.path.basename(input_file) + ".processed")}'
         ]
         self.assertEqual(command, expected)
+        self.assertFalse(use_shell)
 
     def test_start_process(self):
         """Test starting a process."""
