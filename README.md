@@ -118,7 +118,3 @@ The project uses:
 - YAPF for code formatting
 - Pylint for code quality
 - Pre-commit hooks for consistency
-
-## License
-
-MIT License
